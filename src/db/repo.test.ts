@@ -5,7 +5,7 @@ import { freshRepo } from '../test/db';
 import { deShuffle } from '../test/fixtures';
 import { DE_SEED_NOTE } from './deSeed';
 import { dbKind, migrate, Repo, splitLegacy } from './repo';
-import { LEGACY_MIGRATIONS } from './schema';
+import { APPLICATION_ID, LEGACY_MIGRATIONS, USER_MIGRATIONS } from './schema';
 
 describe('repo', () => {
   it('migrates idempotently and seeds the Classic DE table', async () => {
@@ -41,6 +41,30 @@ describe('repo', () => {
     expect(rules).toHaveLength(48);
   });
 
+  it('drops old pessimistic prices when upgrading to min AH prices', async () => {
+    const SQL = await initSqlJs();
+    const insert = 'INSERT INTO price_observations (item_id, ah_price, ah_pessimistic, observed_at) VALUES (1, 10, 8, 1)';
+    const expected = [{ itemId: 1, ahPrice: 10, ahMin: null, observedAt: 1 }];
+
+    // A user database from before the rename.
+    const user = new SQL.Database();
+    user.exec(`PRAGMA application_id = ${APPLICATION_ID.user}`);
+    user.exec(USER_MIGRATIONS[0]);
+    user.exec('PRAGMA user_version = 1');
+    user.exec(insert);
+    migrate(user, 'user');
+    const fresh = await freshRepo();
+    expect(new Repo(fresh.data, user).latestPrices()).toEqual(expected);
+
+    // A legacy combined file, e.g. an old export.
+    const legacy = new SQL.Database();
+    LEGACY_MIGRATIONS.forEach((m) => legacy.exec(m));
+    legacy.exec(`PRAGMA user_version = ${LEGACY_MIGRATIONS.length}`);
+    legacy.exec(insert);
+    const split = splitLegacy(legacy, (b) => new SQL.Database(b));
+    expect(new Repo(split.data, split.user).latestPrices()).toEqual(expected);
+  });
+
   it('round trips items with overrides', async () => {
     const repo = await freshRepo();
     const rec = {
@@ -60,13 +84,13 @@ describe('repo', () => {
 
   it('keeps price history and returns the latest', async () => {
     const repo = await freshRepo();
-    repo.addPrice({ itemId: 1, ahPrice: 10, ahPessimistic: null, observedAt: 1 });
-    repo.addPrice({ itemId: 1, ahPrice: 12, ahPessimistic: 8, observedAt: 2 });
-    repo.addPrice({ itemId: 2, ahPrice: 5, ahPessimistic: null, observedAt: 1 });
+    repo.addPrice({ itemId: 1, ahPrice: 10, ahMin: null, observedAt: 1 });
+    repo.addPrice({ itemId: 1, ahPrice: 12, ahMin: 8, observedAt: 2 });
+    repo.addPrice({ itemId: 2, ahPrice: 5, ahMin: null, observedAt: 1 });
     const latest = repo.latestPrices().sort((a, b) => a.itemId - b.itemId);
     expect(latest).toEqual([
-      { itemId: 1, ahPrice: 12, ahPessimistic: 8, observedAt: 2 },
-      { itemId: 2, ahPrice: 5, ahPessimistic: null, observedAt: 1 },
+      { itemId: 1, ahPrice: 12, ahMin: 8, observedAt: 2 },
+      { itemId: 2, ahPrice: 5, ahMin: null, observedAt: 1 },
     ]);
   });
 
@@ -94,7 +118,7 @@ describe('repo', () => {
   it('calls onChange with the database that changed', async () => {
     const changed: string[] = [];
     const repo = await freshRepo((kind) => changed.push(kind));
-    repo.addPrice({ itemId: 1, ahPrice: 1, ahPessimistic: null, observedAt: 1 });
+    repo.addPrice({ itemId: 1, ahPrice: 1, ahMin: null, observedAt: 1 });
     repo.deleteItem(1);
     expect(changed).toEqual(['user', 'data']);
   });

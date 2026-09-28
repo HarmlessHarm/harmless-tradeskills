@@ -257,16 +257,16 @@ export class Repo {
     ).map((r) => ({
       itemId: Number(r.item_id),
       ahPrice: num(r.ah_price),
-      ahPessimistic: num(r.ah_pessimistic),
+      ahMin: num(r.ah_min),
       observedAt: Number(r.observed_at),
     }));
   }
 
   addPrice(obs: PriceObservation): void {
-    this.run('user', 'INSERT INTO price_observations (item_id, ah_price, ah_pessimistic, observed_at) VALUES (?,?,?,?)', [
+    this.run('user', 'INSERT INTO price_observations (item_id, ah_price, ah_min, observed_at) VALUES (?,?,?,?)', [
       obs.itemId,
       obs.ahPrice,
-      obs.ahPessimistic,
+      obs.ahMin,
       obs.observedAt,
     ]);
   }

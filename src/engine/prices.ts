@@ -1,6 +1,6 @@
 import type { Copper, Item, PriceObservation } from './types';
 
-export type PriceChannel = 'ah' | 'ah-pessimistic' | 'vendor-buy' | 'vendor-sell';
+export type PriceChannel = 'ah' | 'ah-min' | 'vendor-buy' | 'vendor-sell';
 
 export interface PriceContext {
   items: Map<number, Item>;
@@ -16,9 +16,9 @@ export function price(ctx: PriceContext, itemId: number, channel: PriceChannel):
   switch (channel) {
     case 'ah':
       return ctx.prices.get(itemId)?.ahPrice ?? null;
-    case 'ah-pessimistic': {
+    case 'ah-min': {
       const obs = ctx.prices.get(itemId);
-      return obs?.ahPessimistic ?? obs?.ahPrice ?? null;
+      return obs?.ahMin ?? obs?.ahPrice ?? null;
     }
     case 'vendor-buy':
       return ctx.items.get(itemId)?.vendorBuy ?? null;

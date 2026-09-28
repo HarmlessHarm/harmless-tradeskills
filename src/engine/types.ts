@@ -104,8 +104,8 @@ export interface DisenchantRule {
 export interface PriceObservation {
   itemId: number;
   ahPrice: Copper | null;
-  /** Optional pessimistic AH sell price, used for worst case (REQ-4.2). */
-  ahPessimistic: Copper | null;
+  /** Optional min AH sell price, used for the worst case (REQ-4.2). */
+  ahMin: Copper | null;
   observedAt: number;
 }
 

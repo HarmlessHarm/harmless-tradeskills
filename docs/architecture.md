@@ -7,7 +7,7 @@ React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browse
 - **Item**: WoW item ID, name, quality, item level, class (armor/weapon/reagent...), vendor sell price (imported), vendor buy price (manual), source and timestamps, manual overrides. [ref: DEC-3, DEC-6, REQ-1]
 - **Recipe**: spell ID (or local ID for manual recipes), kind (craft, disenchant, convert, ...), profession/skill optional, inputs (item + qty), tools (items required, not consumed), outputs (item, chance, min qty, max qty), cast time. [ref: DEC-1, REQ-2]
 - **DisenchantRule**: quality, item level min/max, item class (armor/weapon) -> outputs (item, chance, min/max qty). A DE recipe for an item is derived from the matching rule rather than stored. [ref: DEC-2, REQ-3]
-- **PriceObservation**: item, channel (AH), price, optional pessimistic price, timestamp. [ref: REQ-4]
+- **PriceObservation**: item, channel (AH), price, optional min AH price, timestamp. [ref: REQ-4]
 - **Workflow**: name, notes, ordered recipe references, buy map (item -> AH/vendor) for external inputs, sell map (item -> AH/vendor/keep) for terminal outputs. Recipes are referenced, not copied. [ref: DEC-9, REQ-6]
 - **Config**: AH cut per AH type, deposit rate per duration, durations, per-action overhead, per-batch overhead, default batch size. [ref: REQ-5, NFR-5]
 

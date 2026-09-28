@@ -6,12 +6,12 @@ export function setAhPrice(
   repo: Repo,
   latest: PriceObservation | undefined,
   itemId: number,
-  patch: { ahPrice?: Copper | null; ahPessimistic?: Copper | null },
+  patch: { ahPrice?: Copper | null; ahMin?: Copper | null },
 ): void {
   repo.addPrice({
     itemId,
     ahPrice: patch.ahPrice !== undefined ? patch.ahPrice : (latest?.ahPrice ?? null),
-    ahPessimistic: patch.ahPessimistic !== undefined ? patch.ahPessimistic : (latest?.ahPessimistic ?? null),
+    ahMin: patch.ahMin !== undefined ? patch.ahMin : (latest?.ahMin ?? null),
     observedAt: Date.now(),
   });
 }

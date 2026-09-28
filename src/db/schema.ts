@@ -80,6 +80,9 @@ export const USER_MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  // Pessimistic price renamed to min AH price. Old values are dropped, not carried over.
+  `ALTER TABLE price_observations DROP COLUMN ah_pessimistic;
+  ALTER TABLE price_observations ADD COLUMN ah_min INTEGER;`,
 ];
 
 /** Schema version of each kind at the split, which is what a split legacy file matches. */
