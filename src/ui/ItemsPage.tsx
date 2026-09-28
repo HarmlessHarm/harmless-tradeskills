@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react';
 import { effectiveItem } from '../engine/items';
 import { QUALITY_NAMES, type ItemClass, type ItemFields, type ItemRecord, type Quality } from '../engine/types';
-import { createManualItem, setItemOverride } from '../state/actions';
+import { createManualItem } from '../state/actions';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { parseWowheadRef, tooltipText, wowheadUrl } from '../wowhead/adapter';
@@ -9,6 +9,7 @@ import { ago, errorText, ItemName, Money, MoneyInput, NumberInput, Panel } from 
 import { deleteConfirmText, itemUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
 import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
+import { useEditSession } from './useEditSession';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 
 export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
@@ -59,7 +60,8 @@ export function ItemsPage() {
   const { itemRecords, mutate, engine, workflows, deRules } = useStore();
   const [filter, setFilter] = useState('');
   const sel = useSelection<number>();
-  const [editing, setEditing] = useState<number | null>(null);
+  const edit = useEditSession(itemRecords, (r) => r.id, (r) => mutate((repo) => repo.saveItem(r)));
+  const editing = edit.editing;
   const [newId, setNewId] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
   const [bulk, setBulk] = useState(false);
@@ -78,7 +80,7 @@ export function ItemsPage() {
     if (!confirm(deleteConfirmText('item', names, usage))) return;
     mutate((repo) => ids.forEach((id) => repo.deleteItem(id)));
     sel.setAll(ids, false);
-    if (editing !== null && gone.has(editing)) setEditing(null);
+    if (editing !== null && gone.has(editing)) edit.drop();
   };
 
   return (
@@ -152,15 +154,24 @@ export function ItemsPage() {
                     <RowActions
                       name={it.name}
                       editing={editing === r.id}
-                      onEdit={() => setEditing(editing === r.id ? null : r.id)}
+                      dirty={editing === r.id && edit.dirty}
+                      onEdit={() => edit.open(r.id)}
+                      onSave={edit.save}
                       onDelete={() => remove([r.id])}
                     />
                   </td>
                 </tr>
-                {editing === r.id && (
+                {editing === r.id && edit.working && (
                   <tr className="editor-row">
                     <td colSpan={11}>
-                      <ItemEditor record={r} onDelete={() => remove([r.id])} onClose={() => setEditing(null)} />
+                      <ItemEditor
+                        record={edit.working}
+                        dirty={edit.dirty}
+                        update={edit.update}
+                        onSave={edit.save}
+                        onCancel={edit.cancel}
+                        onDelete={() => remove([r.id])}
+                      />
                     </td>
                   </tr>
                 )}
@@ -185,7 +196,7 @@ export function ItemsPage() {
             onClick={() => {
               mutate((repo) => createManualItem(repo, newId!, newName.trim()));
               setFilter('');
-              setEditing(newId);
+              edit.open(newId!);
               setNewId(null);
               setNewName('');
             }}
@@ -210,18 +221,38 @@ function SourceBadge({ record }: { record: ItemRecord }) {
 }
 
 /** Edit overrides per field. Imported values stay visible; clearing an override reverts to them (DEC-6). */
-function ItemEditor({ record, onDelete, onClose }: { record: ItemRecord; onDelete: () => void; onClose: () => void }) {
-  const { mutate, mutateAsync } = useStore();
+function ItemEditor({
+  record,
+  dirty,
+  update,
+  onSave,
+  onCancel,
+  onDelete,
+}: {
+  record: ItemRecord;
+  dirty: boolean;
+  update: (fn: (r: ItemRecord) => ItemRecord) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const { mutateAsync } = useStore();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const set = <K extends keyof ItemFields>(key: K, value: ItemFields[K] | undefined) => mutate((repo) => setItemOverride(repo, record, key, value));
+  /** Set or clear (undefined) an override in the draft. */
+  const set = <K extends keyof ItemFields>(key: K, value: ItemFields[K] | undefined) =>
+    update((r) => {
+      const overrides = { ...r.overrides };
+      if (value === undefined) delete overrides[key];
+      else overrides[key] = value;
+      return { ...r, overrides };
+    });
   const imp = record.imported;
   const ov = record.overrides;
   const isManual = record.source === 'manual';
 
   // For a hand-made item, edits go to the base values instead of overrides.
-  const setBase = <K extends keyof ItemFields>(key: K, value: ItemFields[K]) =>
-    mutate((repo) => repo.saveItem({ ...record, imported: { ...record.imported, [key]: value }, updatedAt: Date.now() }));
+  const setBase = <K extends keyof ItemFields>(key: K, value: ItemFields[K]) => update((r) => ({ ...r, imported: { ...r.imported, [key]: value } }));
   const put = <K extends keyof ItemFields>(key: K, value: ItemFields[K] | undefined) =>
     isManual ? value !== undefined && setBase(key, value) : set(key, value);
   const cur = <K extends keyof ItemFields>(key: K): ItemFields[K] => (key in ov ? (ov[key] as ItemFields[K]) : imp[key]);
@@ -280,7 +311,11 @@ function ItemEditor({ record, onDelete, onClose }: { record: ItemRecord; onDelet
           <button className="danger" onClick={onDelete}>
             Delete
           </button>
-          <button onClick={onClose}>Close</button>
+          {dirty && <span className="unsaved">Unsaved changes</span>}
+          <button onClick={onCancel}>{dirty ? 'Cancel' : 'Close'}</button>
+          <button className="primary" onClick={onSave}>
+            Save
+          </button>
         </>
       }
     >

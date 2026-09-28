@@ -731,9 +731,30 @@ label.inline {
   background: var(--panel-2);
   border-color: var(--line);
 }
-.row-icon.edit:hover:not(:disabled),
-.row-icon.edit.on {
+.row-icon.edit:hover:not(:disabled) {
   border-color: var(--gold-dim);
+}
+.row-icon.save {
+  color: var(--pos);
+  background: var(--panel-2);
+  border-color: #2f5a34;
+}
+.row-icon.save:hover:not(:disabled),
+.row-icon.save.dirty {
+  border-color: var(--pos);
+  background: rgba(95, 208, 104, 0.12);
+}
+button.primary {
+  background: rgba(95, 208, 104, 0.14);
+  border-color: #2f5a34;
+  color: var(--pos);
+}
+button.primary:hover:not(:disabled) {
+  border-color: var(--pos);
+}
+.unsaved {
+  color: var(--warn);
+  font-size: 12px;
 }
 .row-icon.delete:hover:not(:disabled) {
   border-color: var(--neg);

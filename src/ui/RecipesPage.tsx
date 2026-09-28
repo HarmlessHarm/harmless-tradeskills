@@ -8,13 +8,15 @@ import { ago, errorText, ItemName, ItemPicker, NumberInput, Panel } from './comm
 import { deleteConfirmText, recipeUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
 import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
+import { useEditSession } from './useEditSession';
 import { ImportBox } from './ItemsPage';
 
 const KINDS = ['craft', 'disenchant', 'convert'];
 
 export function RecipesPage() {
   const { recipeRecords, mutate, engine, workflows, deRules } = useStore();
-  const [editing, setEditing] = useState<string | null>(null);
+  const edit = useEditSession(recipeRecords, (r) => r.id, (r) => mutate((repo) => repo.saveRecipe(r)));
+  const editing = edit.editing;
   const sel = useSelection<string>();
   const [filter, setFilter] = useState('');
   const [bulk, setBulk] = useState(false);
@@ -32,7 +34,7 @@ export function RecipesPage() {
     if (!confirm(deleteConfirmText('recipe', names, usage))) return;
     mutate((repo) => ids.forEach((id) => repo.deleteRecipe(id)));
     sel.setAll(ids, false);
-    if (editing !== null && ids.includes(editing)) setEditing(null);
+    if (editing !== null && ids.includes(editing)) edit.drop();
   };
 
   const createManual = () => {
@@ -52,7 +54,7 @@ export function RecipesPage() {
       return id;
     });
     setFilter('');
-    setEditing(id);
+    edit.open(id);
   };
 
   return (
@@ -132,15 +134,24 @@ export function RecipesPage() {
                     <RowActions
                       name={rec.name}
                       editing={editing === r.id}
-                      onEdit={() => setEditing(editing === r.id ? null : r.id)}
+                      dirty={editing === r.id && edit.dirty}
+                      onEdit={() => edit.open(r.id)}
+                      onSave={edit.save}
                       onDelete={() => remove([r.id])}
                     />
                   </td>
                 </tr>
-                {editing === r.id && (
+                {editing === r.id && edit.working && (
                   <tr className="editor-row">
                     <td colSpan={8}>
-                      <RecipeEditor record={r} onDelete={() => remove([r.id])} onClose={() => setEditing(null)} />
+                      <RecipeEditor
+                        record={edit.working}
+                        dirty={edit.dirty}
+                        update={edit.update}
+                        onSave={edit.save}
+                        onCancel={edit.cancel}
+                        onDelete={() => remove([r.id])}
+                      />
                     </td>
                   </tr>
                 )}
@@ -163,8 +174,22 @@ export function RecipesPage() {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function RecipeEditor({ record, onDelete, onClose }: { record: RecipeRecord; onDelete: () => void; onClose: () => void }) {
-  const { mutate, mutateAsync } = useStore();
+function RecipeEditor({
+  record,
+  dirty,
+  update,
+  onSave,
+  onCancel,
+  onDelete,
+}: {
+  record: RecipeRecord;
+  dirty: boolean;
+  update: (fn: (r: RecipeRecord) => RecipeRecord) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const { mutateAsync } = useStore();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const rec = effectiveRecipe(record);
@@ -172,15 +197,12 @@ function RecipeEditor({ record, onDelete, onClose }: { record: RecipeRecord; onD
 
   /** Manual recipes edit their base values; imported ones get an override per field (DEC-6). */
   const set = <K extends keyof RecipeFields>(key: K, value: RecipeFields[K]) =>
-    mutate((repo) => {
-      if (isManual) {
-        repo.saveRecipe({ ...record, imported: { ...record.imported, [key]: value }, updatedAt: Date.now() });
-        return;
-      }
-      const overrides = { ...record.overrides };
-      if (same(record.imported[key], value)) delete overrides[key];
+    update((r) => {
+      if (r.source === 'manual') return { ...r, imported: { ...r.imported, [key]: value } };
+      const overrides = { ...r.overrides };
+      if (same(r.imported[key], value)) delete overrides[key];
       else overrides[key] = value;
-      repo.saveRecipe({ ...record, overrides, updatedAt: Date.now() });
+      return { ...r, overrides };
     });
 
   const setOutput = (i: number, patch: Partial<RecipeOutput>) => set('outputs', rec.outputs.map((o, k) => (k === i ? { ...o, ...patch } : o)));
@@ -192,7 +214,7 @@ function RecipeEditor({ record, onDelete, onClose }: { record: RecipeRecord; onD
       actions={
         <>
           {!isManual && Object.keys(record.overrides).length > 0 && (
-            <button onClick={() => mutate((repo) => repo.saveRecipe({ ...record, overrides: {}, updatedAt: Date.now() }))}>Reset to imported</button>
+            <button onClick={() => update((r) => ({ ...r, overrides: {} }))}>Reset to imported</button>
           )}
           {record.spellId && (
             <button
@@ -216,7 +238,11 @@ function RecipeEditor({ record, onDelete, onClose }: { record: RecipeRecord; onD
           <button className="danger" onClick={onDelete}>
             Delete
           </button>
-          <button onClick={onClose}>Close</button>
+          {dirty && <span className="unsaved">Unsaved changes</span>}
+          <button onClick={onCancel}>{dirty ? 'Cancel' : 'Close'}</button>
+          <button className="primary" onClick={onSave}>
+            Save
+          </button>
         </>
       }
     >
