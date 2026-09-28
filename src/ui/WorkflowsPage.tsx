@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { findDisenchantRule } from '../engine/disenchant';
-import type { Recipe, Workflow, WorkflowStep } from '../engine/types';
+import type { Item, Recipe, Workflow, WorkflowStep } from '../engine/types';
 import {
   analyzeWorkflow,
   describeStep,
@@ -282,7 +282,10 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
             );
           })}
         </ol>
-        <AddStep onAdd={(step) => save({ steps: [...wf.steps, step] })} />
+        <AddStep
+          onAdd={(step) => save({ steps: [...wf.steps, step] })}
+          outputs={analysis.terminalOutputs.map((x) => x.itemId)}
+        />
       </Panel>
 
       {analysis.ok && (
@@ -611,7 +614,10 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   );
 }
 
-function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
+/** Only uncommon, rare and epic armor and weapons can be disenchanted. */
+const disenchantable = (i: Item) => (i.itemClass === 'armor' || i.itemClass === 'weapon') && i.quality >= 2 && i.quality <= 4;
+
+function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outputs: number[] }) {
   const { engine, recipeRecords, mutateAsync } = useStore();
   const [mode, setMode] = useState<'recipe' | 'disenchant'>('recipe');
   const [deItem, setDeItem] = useState<number | null>(null);
@@ -633,6 +639,11 @@ function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
     }
   };
 
+  // Items this workflow already makes that can be disenchanted come first.
+  const deFromWorkflow = outputs.filter((id) => {
+    const it = engine.items.get(id);
+    return it !== undefined && disenchantable(it);
+  });
   const deItemObj = deItem !== null ? engine.items.get(deItem) : undefined;
   const noRule = deItemObj && !findDisenchantRule(engine.deRules, deItemObj);
 
@@ -652,7 +663,9 @@ function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
         <ItemPicker
           value={deItem}
           onChange={setDeItem}
-          filter={(i) => i.itemClass === 'armor' || i.itemClass === 'weapon'}
+          filter={disenchantable}
+          preferred={deFromWorkflow}
+          preferredLabel="made in this workflow"
           placeholder="Item to disenchant"
         />
       )}

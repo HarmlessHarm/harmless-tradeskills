@@ -157,11 +157,16 @@ export function ItemPicker({
   onChange,
   filter,
   placeholder = 'Item name or ID',
+  preferred = [],
+  preferredLabel,
 }: {
   value: number | null;
   onChange: (id: number | null) => void;
   filter?: (item: Item) => boolean;
   placeholder?: string;
+  /** Items listed first, in this order, with `preferredLabel` as their hint. */
+  preferred?: number[];
+  preferredLabel?: string;
 }) {
   const { engine, mutateAsync } = useStore();
   const listId = useId();
@@ -172,7 +177,13 @@ export function ItemPicker({
   };
   const [text, setText] = useState(label(value));
   useEffect(() => setText(label(value)), [value, engine.items]); // eslint-disable-line react-hooks/exhaustive-deps
-  const options = [...engine.items.values()].filter((i) => !filter || filter(i)).sort((a, b) => a.name.localeCompare(b.name));
+  const rank = (id: number) => {
+    const i = preferred.indexOf(id);
+    return i < 0 ? preferred.length : i;
+  };
+  const options = [...engine.items.values()]
+    .filter((i) => !filter || filter(i))
+    .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name));
   const commit = () => {
     const t = text.trim();
     if (!t) return value !== null && onChange(null);
@@ -198,7 +209,7 @@ export function ItemPicker({
       />
       <datalist id={listId}>
         {options.map((o) => (
-          <option key={o.id} value={`${o.name} #${o.id}`} />
+          <option key={o.id} value={`${o.name} #${o.id}`} label={preferred.includes(o.id) ? preferredLabel : undefined} />
         ))}
       </datalist>
     </>
