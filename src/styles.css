@@ -902,7 +902,6 @@ th.r .sort-btn {
 }
 .combo.recipe-search {
   flex: 1 1 320px;
-  max-width: 520px;
 }
 .combo-input {
   width: 100%;
