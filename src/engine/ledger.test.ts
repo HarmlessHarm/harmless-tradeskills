@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { replay, type Transaction, unrealized } from './ledger';
+import { realizedSince, replay, type Transaction, unrealized } from './ledger';
 
 let seq = 0;
 const tx = (kind: Transaction['kind'], qty: number, unitPrice: number | null, fee = 0): Transaction => {
@@ -76,6 +76,14 @@ describe('ledger', () => {
     const [a, b] = buys();
     const sell = tx('sell', 15, 800);
     expect(replay([sell, b, a], 'fifo')).toEqual(replay([a, b, sell], 'fifo'));
+  });
+
+  it('sums profit of recent sales', () => {
+    const txs = [tx('buy', 10, 500), tx('sell', 5, 800), tx('sell', 5, 900)];
+    const s = replay(txs, 'average');
+    expect(realizedSince(s, 0)).toBe(s.realized);
+    expect(realizedSince(s, txs[2].occurredAt)).toBe(5 * 900 - 2_500);
+    expect(realizedSince(s, Infinity)).toBe(0);
   });
 
   it('values holdings at the market price after the cut', () => {

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { flip, listingMode } from '../engine/ah';
-import { type LedgerState, replay, type Transaction } from '../engine/ledger';
+import { flip, listingMode, netOnSale } from '../engine/ah';
+import { type LedgerState, realizedSince, replay, type Transaction, unrealized } from '../engine/ledger';
 import { rowSettings, watchlistItems, watchRow, type WatchItem, type WatchRow } from '../engine/flip';
 import { formatMoney } from '../engine/money';
 import { type PriceSnapshot, type PriceStats, priceStats } from '../engine/snapshots';
@@ -76,7 +76,7 @@ export function FlipPage() {
         const snaps = (snapsByItem.get(watch.itemId) ?? []).filter((s) => s.ahType === settings.ahType);
         const stats = priceStats(snaps);
         const { txs, ledger } = ledgers.get(watch.itemId) ?? { txs: [], ledger: replay([], config.ledgerCostMethod) };
-        return { watch, item, name: item?.name ?? `#${watch.itemId}`, settings, snaps, txs, ledger, stats, row: watchRow(config, item, settings, stats, margin) };
+        return { watch, item, name: item?.name ?? `#${watch.itemId}`, settings, snaps, txs, ledger, stats, row: watchRow(config, item, settings, stats, margin, ledger) };
       }),
     [engine, workflows, flipFavorites, held, ledgers, snapsByItem, config, margin],
   );
@@ -160,6 +160,7 @@ export function FlipPage() {
 
   return (
     <div className="stack">
+      <Summary rows={rows} config={config} />
       <Panel
         title="Watchlist"
         actions={
@@ -294,6 +295,14 @@ export function FlipPage() {
                               <span className="sub">
                                 @ <Money value={r.ledger.avgCost} />
                               </span>
+                              {r.row.belowFloor && (
+                                <span
+                                  className="badge below-floor"
+                                  title={`Selling at ${formatMoney(r.row.sellAt)} does not cover your floor of ${formatMoney(r.row.floor)} (cost, AH cut and one lost deposit)`}
+                                >
+                                  below floor
+                                </span>
+                              )}
                             </>
                           ) : (
                             <span className="money muted">-</span>
@@ -325,6 +334,51 @@ export function FlipPage() {
           </div>
         )}
       </Panel>
+    </div>
+  );
+}
+
+/** Portfolio at a glance: what the watchlist holds and has earned. */
+function Summary({ rows, config }: { rows: Row[]; config: Config }) {
+  const since = Date.now() - 30 * 86_400_000;
+  const held = rows.filter((r) => r.ledger.holdings > 0);
+  const atCost = held.reduce((s, r) => s + r.ledger.costRemaining, 0);
+  const valued = held.map((r) => unrealized(r.ledger, r.row.typical !== null ? netOnSale(config, r.row.typical, r.settings.ahType) : null));
+  const open = valued.reduce<number>((s, v) => s + (v ?? 0), 0);
+  const unpriced = valued.filter((v) => v === null).length;
+  const recent = rows.reduce((s, r) => s + realizedSince(r.ledger, since), 0);
+  const allTime = rows.reduce((s, r) => s + r.ledger.realized, 0);
+  const below = held.filter((r) => r.row.belowFloor).length;
+  return (
+    <div className="summary-strip">
+      <div className="stat">
+        <span className="stat-label">Watching</span>
+        <span className="stat-value">{rows.length} items</span>
+        <span className="stat-sub">{held.length} held</span>
+      </div>
+      <div className="stat">
+        <span className="stat-label">Stock at cost</span>
+        <span className="stat-value">
+          <Money value={held.length ? atCost : null} />
+        </span>
+        {below > 0 && <span className="stat-sub warn">{below} below floor</span>}
+      </div>
+      <div className="stat" title="Holdings at the typical price after the AH cut, minus what they cost">
+        <span className="stat-label">Unrealized</span>
+        <span className="stat-value">
+          <Money value={held.length && unpriced < held.length ? open : null} signed />
+        </span>
+        {unpriced > 0 && <span className="stat-sub">{unpriced} without a typical price</span>}
+      </div>
+      <div className="stat">
+        <span className="stat-label">Realized, 30 days</span>
+        <span className="stat-value">
+          <Money value={recent} signed />
+        </span>
+        <span className="stat-sub">
+          all time <Money value={allTime} signed />
+        </span>
+      </div>
     </div>
   );
 }
@@ -461,6 +515,15 @@ function QuickCalc({
             <dd>
               <Money value={res.breakEvenSellPrice} />
             </dd>
+            {row.floor !== null && (
+              <>
+                <dt>Floor for the {r.ledger.holdings} you hold</dt>
+                <dd className={row.belowFloor ? 'warn' : ''}>
+                  <Money value={row.floor} />
+                  {row.belowFloor && <span className="small"> (sell at is under it)</span>}
+                </dd>
+              </>
+            )}
           </dl>
         </>
       ) : (

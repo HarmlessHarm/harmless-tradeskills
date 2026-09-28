@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
 import { deShuffle, engineData, IDS } from '../test/fixtures';
 import { flip } from './ah';
-import { maxBuyPrice, rowSettings, watchlistItems, watchRow } from './flip';
+import { maxBuyPrice, priceFloor, rowSettings, watchlistItems, watchRow } from './flip';
 import type { PriceStats } from './snapshots';
 
 const cfg = DEFAULT_CONFIG;
@@ -101,5 +101,32 @@ describe('watchlist row', () => {
   it('is empty without prices', () => {
     const row = watchRow(cfg, item, rowSettings(cfg, IDS.oil, undefined), { n: 0, nSolid: 0, last: null, min: null, typical: null }, 0.15);
     expect([row.lastLow, row.sellAt, row.buyBelow, row.margin, row.relists]).toEqual([null, null, null, null, null]);
+  });
+});
+
+describe('price floor', () => {
+  const posting = { vendorSellEach: 2000, durationKey: '8h', ahType: 'faction' as const, mode: 'lot' as const };
+
+  it('is the average cost after the cut plus one lost deposit, spread over the stock', () => {
+    // 20 held @ 1g. One auction of 20 costs a 60s deposit: 3s per item. 1g 8s 42c minus its 5s 42c cut is exactly 1g 3s.
+    const floor = priceFloor(cfg, { ...posting, holdings: 20, avgCost: 10_000 })!;
+    expect(floor).toBe(10_842);
+    expect(flip(cfg, { ...posting, buyPrice: 10_000, sellPrice: floor, qty: 20 }).profitTotal).toBeGreaterThanOrEqual(6_000);
+    expect(flip(cfg, { ...posting, buyPrice: 10_000, sellPrice: floor - 1, qty: 20 }).profitTotal).toBeLessThan(6_000);
+  });
+
+  it('has no floor without stock', () => {
+    expect(priceFloor(cfg, { ...posting, holdings: 0, avgCost: null })).toBeNull();
+  });
+
+  it('flags a planned sell price under the floor', () => {
+    const item = { ...engineData().items.get(IDS.oil)!, vendorSell: 2000 };
+    const stats: PriceStats = { n: 6, nSolid: 6, last: { price: 9_000, qty: 5, observedAt: 1 }, min: 9_000, typical: 10_500 };
+    const settings = rowSettings(cfg, IDS.oil, undefined);
+    const row = watchRow(cfg, item, settings, stats, 0.15, { holdings: 20, avgCost: 10_000 });
+    expect(row.floor).toBe(priceFloor(cfg, { ...posting, holdings: 20, avgCost: 10_000 }));
+    expect(row.belowFloor).toBe(true);
+    expect(watchRow(cfg, item, settings, { ...stats, typical: 12_000 }, 0.15, { holdings: 20, avgCost: 10_000 }).belowFloor).toBe(false);
+    expect(watchRow(cfg, item, settings, stats, 0.15).floor).toBeNull();
   });
 });

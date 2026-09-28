@@ -99,6 +99,12 @@ export function LedgerCard({ r, config }: { r: Row; config: Config }) {
             <Money value={ledger.sales.length ? ledger.realized : null} signed />
           </dd>
         </div>
+        <div title="Lowest sell price that gets back what you paid: cost, AH cut and one lost deposit">
+          <dt>Floor</dt>
+          <dd className={r.row.belowFloor ? 'warn' : ''}>
+            <Money value={r.row.floor} />
+          </dd>
+        </div>
         <div title="Holdings at the typical price after the AH cut, minus what they cost">
           <dt>Unrealized</dt>
           <dd>
@@ -106,6 +112,12 @@ export function LedgerCard({ r, config }: { r: Row; config: Config }) {
           </dd>
         </div>
       </dl>
+      {r.row.belowFloor && (
+        <p className="small warn">
+          Selling at <Money value={r.row.sellAt} /> does not cover your floor of <Money value={r.row.floor} />: the market is under what you paid. What you paid is
+          gone either way, so decide on today's price: hold for a better market, or sell and take the loss.
+        </p>
+      )}
       {ledger.oversold > 0 && (
         <p className="small warn">
           {ledger.oversold} sold {ledger.oversold === 1 ? 'unit was' : 'units were'} never logged as bought: they count at zero cost. Log the buy or an adjustment to fix it.

@@ -135,6 +135,11 @@ export function replay(transactions: Transaction[], method: CostMethod): LedgerS
   };
 }
 
+/** Profit of the sales from a moment on. */
+export function realizedSince(state: LedgerState, since: number): Copper {
+  return state.sales.filter((s) => s.tx.occurredAt >= since).reduce((sum, s) => sum + s.profit, 0);
+}
+
 /** Holdings valued at a market price after the AH cut, minus what they cost. */
 export function unrealized(state: LedgerState, netPerUnit: Copper | null): Copper | null {
   if (state.holdings === 0 || netPerUnit === null) return null;

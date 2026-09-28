@@ -105,9 +105,43 @@ export interface WatchRow {
   marginPct: number | null;
   /** Times the lot can expire before buying at the last low stops paying. null: expiring costs nothing. */
   relists: number | null;
+  /** Lowest sell price that gets the cost of what you hold back, or null when holding nothing (see `priceFloor`). */
+  floor: Copper | null;
+  /** Selling at `sellAt` would not cover the floor: the market is under what you paid. */
+  belowFloor: boolean;
 }
 
-export function watchRow(config: Config, item: Item | undefined, settings: ReturnType<typeof rowSettings>, stats: PriceStats, targetMargin: number): WatchRow {
+export interface FloorInput {
+  holdings: number;
+  /** Cost per unit held (ledger). */
+  avgCost: Copper | null;
+  vendorSellEach: Copper | null;
+  durationKey: string;
+  ahType: AhType;
+  mode: ListingMode;
+}
+
+/**
+ * Break-even price per item for stock you hold: average cost after the AH cut, plus any deposit
+ * spent on sale and the risk of one lost deposit when relisting it all. Cost only sets this floor;
+ * the listing price comes from the market (#19).
+ */
+export function priceFloor(config: Config, input: FloorInput): Copper | null {
+  if (input.holdings <= 0 || input.avgCost === null) return null;
+  const { holdings, avgCost, ...rest } = input;
+  const dep = postingDeposit(config, input.mode, input.vendorSellEach, holdings, input.durationKey, input.ahType);
+  const risk = Math.ceil(dep / holdings);
+  return flip(config, { ...rest, buyPrice: avgCost + risk, sellPrice: avgCost, qty: holdings }).breakEvenSellPrice;
+}
+
+export function watchRow(
+  config: Config,
+  item: Item | undefined,
+  settings: ReturnType<typeof rowSettings>,
+  stats: PriceStats,
+  targetMargin: number,
+  holding: { holdings: number; avgCost: Copper | null } = { holdings: 0, avgCost: null },
+): WatchRow {
   const sellAt = settings.sellPrice ?? stats.typical;
   const lastLow = stats.last?.price ?? null;
   const base = {
@@ -119,6 +153,8 @@ export function watchRow(config: Config, item: Item | undefined, settings: Retur
   };
   const buyBelow = sellAt === null ? null : maxBuyPrice(config, { ...base, sellPrice: sellAt, targetMargin });
   const r = sellAt !== null && lastLow !== null ? flip(config, { ...base, buyPrice: lastLow, sellPrice: sellAt }) : null;
+  const { qty: _, ...posting } = base;
+  const floor = priceFloor(config, { ...posting, ...holding });
   return {
     lastLow,
     lastLowAt: stats.last?.observedAt ?? null,
@@ -130,5 +166,7 @@ export function watchRow(config: Config, item: Item | undefined, settings: Retur
     margin: r?.profitFirstListing ?? null,
     marginPct: r && lastLow ? r.profitFirstListing / lastLow : null,
     relists: r ? r.failedListingsAbsorbed : null,
+    floor,
+    belowFloor: floor !== null && sellAt !== null && sellAt < floor,
   };
 }
