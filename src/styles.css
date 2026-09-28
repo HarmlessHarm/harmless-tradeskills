@@ -673,3 +673,192 @@ label.inline {
     padding: 0 12px;
   }
 }
+
+/* Bulk import */
+.paste-zone {
+  width: 100%;
+  resize: vertical;
+  border-style: dashed;
+  text-align: center;
+  padding-top: 18px;
+}
+.bulk-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.bulk-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.bulk-list label.inline {
+  margin: 2px 0;
+}
+
+/* Row selection and delete */
+.table .check {
+  width: 28px;
+  padding-right: 0;
+}
+.table tr.selected td {
+  background: rgba(227, 179, 65, 0.06);
+}
+.row-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+.row-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.row-icon.edit {
+  color: var(--gold);
+}
+.row-icon.delete {
+  color: var(--neg);
+}
+.row-icon:hover:not(:disabled),
+.row-icon.on {
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+.row-icon.edit:hover:not(:disabled) {
+  border-color: var(--gold-dim);
+}
+.row-icon.save {
+  color: var(--pos);
+  background: var(--panel-2);
+  border-color: #2f5a34;
+}
+.row-icon.save:hover:not(:disabled),
+.row-icon.save.dirty {
+  border-color: var(--pos);
+  background: rgba(95, 208, 104, 0.12);
+}
+button.primary {
+  background: rgba(95, 208, 104, 0.14);
+  border-color: #2f5a34;
+  color: var(--pos);
+}
+button.primary:hover:not(:disabled) {
+  border-color: var(--pos);
+}
+.unsaved {
+  color: var(--warn);
+  font-size: 12px;
+}
+.row-icon.delete:hover:not(:disabled) {
+  border-color: var(--neg);
+}
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--gold-dim);
+  border-radius: 6px;
+  background: rgba(227, 179, 65, 0.06);
+}
+
+/* Inline editor row: sits under the row being edited */
+.table tr.editing td {
+  background: rgba(227, 179, 65, 0.08);
+  border-bottom-color: transparent;
+}
+.table tr.editor-row > td {
+  padding: 0 8px 12px 36px;
+  background: rgba(227, 179, 65, 0.04);
+  border-bottom: 1px solid var(--gold-dim);
+}
+.editor-row .panel {
+  background: var(--bg-2);
+  border-color: var(--gold-dim);
+}
+/* The editor's own tables must not inherit list-table row styling. */
+.editor-row .panel td,
+.editor-row .panel th {
+  border-bottom: none;
+  background: none;
+  padding: 3px 8px 3px 0;
+}
+
+/* Table filters and sortable headers */
+.table-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.search.wide {
+  width: min(320px, 100%);
+}
+.sort-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sort-btn:hover,
+.sort-btn.on {
+  color: var(--text);
+}
+.sort-arrow {
+  font-size: 9px;
+  opacity: 0.45;
+}
+.sort-btn.on .sort-arrow {
+  opacity: 1;
+  color: var(--gold);
+}
+th.r .sort-btn {
+  flex-direction: row-reverse;
+}
+
+/* Bulk import inside the import card */
+.bulk-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.bulk-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.bulk-head h3 {
+  margin: 0;
+}
+.short-input {
+  width: 150px;
+}
+.selection-bar {
+  flex-wrap: wrap;
+}
+.bulk-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+  margin-right: 2px;
+  border-right: 1px solid var(--line);
+}
+/* Shift-click range selection should not also select page text. */
+.table .check {
+  user-select: none;
+}

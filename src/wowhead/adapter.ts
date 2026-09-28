@@ -28,6 +28,53 @@ export function parseWowheadRef(input: string, fallbackType: WowheadType): Wowhe
   return null;
 }
 
+export interface PastedRef extends WowheadRef {
+  /** Link text, when the paste had one. */
+  name: string | null;
+}
+
+const decodeEntities = (s: string) =>
+  s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+/**
+ * Find every Wowhead item and spell link in something copied from a Wowhead page, such as rows
+ * selected in a listview table. Browsers put the selection on the clipboard as HTML, which keeps
+ * the links; plain text only keeps URLs that were written out. Deduplicated, in page order.
+ */
+export function extractWowheadRefs(html: string, text = ''): PastedRef[] {
+  const found = new Map<string, PastedRef>();
+  const add = (type: WowheadType, id: number, name: string | null) => {
+    const key = `${type}:${id}`;
+    const existing = found.get(key);
+    if (!existing) found.set(key, { type, id, name: name || null });
+    else if (!existing.name && name) existing.name = name;
+  };
+  const anchors = /<a\b[^>]*\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (let m = anchors.exec(html); m; m = anchors.exec(html)) {
+    const ref = /[/?&](item|spell)=(\d+)/i.exec(m[1]);
+    if (!ref) continue;
+    const name = decodeEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+    add(ref[1].toLowerCase() as WowheadType, Number(ref[2]), name);
+  }
+  const urls = /wowhead\.com\/\S*?\b(item|spell)=(\d+)/gi;
+  for (let m = urls.exec(text); m; m = urls.exec(text)) add(m[1].toLowerCase() as WowheadType, Number(m[2]), null);
+  return [...found.values()];
+}
+
+/**
+ * Profession names linked in a pasted selection (Wowhead links a skill as /skill=197 with its name
+ * as the text). Used to suggest a profession for pasted recipes; empty when the page has none.
+ */
+export function extractProfessions(html: string): string[] {
+  const names = new Set<string>();
+  const anchors = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&]skill=\d+[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (let m = anchors.exec(html); m; m = anchors.exec(html)) {
+    const name = decodeEntities(m[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+    if (name && !/^\d+$/.test(name)) names.add(name);
+  }
+  return [...names];
+}
+
 export interface TooltipResponse {
   name: string;
   quality?: number;
@@ -143,32 +190,18 @@ export function parseItemTooltip(data: TooltipResponse): ItemFields {
 
 // ---------------------------------------------------------------------------
 // Spells
+//
+// A profession spell tooltip, as served for Forever (see fixtures/spell-*.json):
+//   <table> name link, <br />, "5.125 sec cast" </table>
+//   <table><tr><td>
+//     [Tools:<br /><div class="indent q1"> links to an item search, not an item </div>]
+//     Reagents:<br /><div class="indent q1"> <a item=A>..</a>&nbsp;(2), <a item=B>..</a> </div>
+//     [<div class="q">Creates ...</div>]
+//     <br /><span class="qN"><a item=CREATED>..</a></span> (2)   <- then the created item's own tooltip
+//   </td></tr></table>
+// Tools are ignored: the crafter is assumed to have them.
 
-interface ItemLink {
-  itemId: number;
-  index: number;
-  end: number;
-}
-
-function itemLinks(html: string): ItemLink[] {
-  const out: ItemLink[] = [];
-  const re = /<a[^>]+href="[^"]*?\bitem=(\d+)[^"]*"[^>]*>[\s\S]*?<\/a>/gi;
-  for (let m = re.exec(html); m; m = re.exec(html)) {
-    out.push({ itemId: Number(m[1]), index: m.index, end: m.index + m[0].length });
-  }
-  return out;
-}
-
-/** Everything from a "Label:" marker to the next <br>, closing div, or next known label. */
-function section(html: string, label: string): { start: number; end: number } | null {
-  // The visible label, not a class name like "whtt-reagents".
-  const re = new RegExp(`(?<![\\w-])${label}\\s*:`, 'i');
-  const m = re.exec(html);
-  if (!m) return null;
-  const rest = html.slice(m.index + m[0].length);
-  const stop = rest.search(/<br\s*\/?>|<\/div>|<\/td>|(?<![\w-])(?:Reagents|Tools|Requires)\s*:/i);
-  return { start: m.index, end: m.index + m[0].length + (stop >= 0 ? stop : rest.length) };
-}
+const ITEM_LINK = /<a\b[^>]*\bhref="[^"]*?\bitem=(\d+)[^"]*"[^>]*>[\s\S]*?<\/a>/gi;
 
 function parseCastTimeMs(text: string): number {
   if (/\bInstant\b/i.test(text)) return 0;
@@ -177,6 +210,22 @@ function parseCastTimeMs(text: string): number {
   const min = /([\d.]+)\s*min(?:utes?)?\s*cast/i.exec(text);
   if (min) return Math.round(Number(min[1]) * 60_000);
   return 0;
+}
+
+/** Reagent links with their "(n)" counts, from the reagent block's inner HTML. */
+function parseReagents(block: string): Qty[] {
+  const inputs: Qty[] = [];
+  const re = new RegExp(ITEM_LINK.source, 'gi');
+  for (let m = re.exec(block); m; m = re.exec(block)) {
+    const after = block.slice(m.index + m[0].length, m.index + m[0].length + 40);
+    const q = /^(?:\s|&nbsp;)*\((\d+)\)/.exec(after);
+    const qty = q ? Number(q[1]) : 1;
+    const itemId = Number(m[1]);
+    const existing = inputs.find((x) => x.itemId === itemId);
+    if (existing) existing.qty += qty;
+    else inputs.push({ itemId, qty });
+  }
+  return inputs;
 }
 
 export interface ParsedSpell {
@@ -188,50 +237,34 @@ export interface ParsedSpell {
 
 export function parseSpellTooltip(data: TooltipResponse): ParsedSpell {
   const html = data.tooltip;
-  const text = tooltipText(html);
-  const links = itemLinks(html);
   const warnings: string[] = [];
 
-  const reagentSec = section(html, 'Reagents');
-  const toolSec = section(html, 'Tools');
-  const inside = (l: ItemLink, s: { start: number; end: number } | null) => !!s && l.index >= s.start && l.index < s.end;
+  // Cast time lives in the first table; later text belongs to the created item's tooltip.
+  const headerEnd = html.search(/<\/table>/i);
+  const header = headerEnd >= 0 ? html.slice(0, headerEnd) : html;
 
-  const inputs: Qty[] = [];
-  const tools: number[] = [];
-  const others: number[] = [];
-  for (const link of links) {
-    if (inside(link, reagentSec)) {
-      // Quantity follows the link as "(n)"; a missing count means 1.
-      const after = html.slice(link.end, link.end + 40);
-      const q = /^\s*(?:<[^>]+>\s*)*\((\d+)\)/.exec(after);
-      const qty = q ? Number(q[1]) : 1;
-      const existing = inputs.find((x) => x.itemId === link.itemId);
-      if (existing) existing.qty += qty;
-      else inputs.push({ itemId: link.itemId, qty });
-    } else if (inside(link, toolSec)) {
-      if (!tools.includes(link.itemId)) tools.push(link.itemId);
-    } else if (!others.includes(link.itemId)) {
-      others.push(link.itemId);
-    }
-  }
+  const reagentMatch = /(?<![\w-])Reagents:\s*(?:<br\s*\/?>\s*)*<div\b[^>]*>([\s\S]*?)<\/div>/i.exec(html);
+  const inputs = reagentMatch ? parseReagents(reagentMatch[1]) : [];
+  if (!reagentMatch) warnings.push('No reagents found.');
 
-  // The created item is the remaining item link. Its quantity defaults to 1: the "(2)" Wowhead shows
-  // after green items looks like a quality marker, not a count (see PRD open questions).
-  const created = others.find((id) => !inputs.some((i) => i.itemId === id) && !tools.includes(id));
-  if (!created) warnings.push('No created item found. Add the output by hand.');
-  if (!reagentSec) warnings.push('No reagents found.');
+  // The created item is the first item link after the reagents. Its quantity defaults to 1: Wowhead
+  // shows "(2)" after some created items (white and green alike) and its meaning is unknown.
+  const searchFrom = reagentMatch ? reagentMatch.index + reagentMatch[0].length : Math.max(0, headerEnd);
+  const createdMatch = new RegExp(ITEM_LINK.source, 'i').exec(html.slice(searchFrom));
+  const created = createdMatch ? Number(createdMatch[1]) : null;
+  if (created === null) warnings.push('No created item found. Add the output by hand.');
 
   const fields: RecipeFields = {
     name: data.name,
     kind: 'craft',
     profession: null,
-    castTimeMs: parseCastTimeMs(text),
+    castTimeMs: parseCastTimeMs(tooltipText(header)),
     inputs,
-    tools,
-    outputs: created ? [{ itemId: created, chance: 1, minQty: 1, maxQty: 1 }] : [],
+    tools: [],
+    outputs: created !== null ? [{ itemId: created, chance: 1, minQty: 1, maxQty: 1 }] : [],
     outputMode: 'independent',
   };
-  const referencedItems = [...new Set([...inputs.map((i) => i.itemId), ...tools, ...(created ? [created] : [])])];
+  const referencedItems = [...new Set([...inputs.map((i) => i.itemId), ...(created !== null ? [created] : [])])];
   return { fields, referencedItems, warnings };
 }
 

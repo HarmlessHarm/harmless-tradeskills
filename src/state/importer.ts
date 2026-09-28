@@ -1,6 +1,6 @@
 import type { Repo } from '../db/repo';
 import type { ItemRecord, RecipeRecord } from '../engine/types';
-import { fetchTooltip, parseItemTooltip, parseSpellTooltip, type Fetcher } from '../wowhead/adapter';
+import { fetchTooltip, parseItemTooltip, parseSpellTooltip, type Fetcher, type WowheadRef } from '../wowhead/adapter';
 
 /**
  * Lazy, on-demand imports (DEC-5, NFR-4). Existing overrides and manual fields are always kept.
@@ -49,7 +49,8 @@ export async function importRecipe(
   const recipe: RecipeRecord = {
     id,
     spellId,
-    imported: parsed.fields,
+    // Wowhead's tooltip has no profession, so keep one set earlier (by bulk import or by hand).
+    imported: { ...parsed.fields, profession: parsed.fields.profession ?? existing?.imported.profession ?? null },
     overrides: existing?.overrides ?? {},
     source: 'wowhead',
     fetchedAt: now,
@@ -77,6 +78,64 @@ export async function importMissingItems(repo: Repo, ids: number[], fetcher?: Fe
     }
   }
   return errors;
+}
+
+export interface BulkResult {
+  imported: number;
+  skipped: number;
+  /** Recipes whose profession was set by this run. */
+  tagged: number;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Import a pasted list of items and spells one request at a time. Spells go first, because a
+ * recipe import also pulls in its reagents and created item, which then need no separate request.
+ */
+/** Set the profession on an imported recipe, as a base value so it is not shown as an edit. */
+export function setRecipeProfession(repo: Repo, spellId: number, profession: string): boolean {
+  const r = repo.listRecipes().find((x) => x.spellId === spellId);
+  if (!r || r.imported.profession === profession) return false;
+  repo.saveRecipe({ ...r, imported: { ...r.imported, profession }, updatedAt: Date.now() });
+  return true;
+}
+
+export async function bulkImport(
+  repo: Repo,
+  refs: WowheadRef[],
+  opts: { force: boolean; profession?: string | null },
+  onProgress: (done: number, total: number) => void,
+): Promise<BulkResult> {
+  const ordered = [...refs.filter((r) => r.type === 'spell'), ...refs.filter((r) => r.type === 'item')];
+  const result: BulkResult = { imported: 0, skipped: 0, tagged: 0, errors: [], warnings: [] };
+  onProgress(0, ordered.length);
+  for (let i = 0; i < ordered.length; i++) {
+    const ref = ordered[i];
+    const exists =
+      ref.type === 'spell' ? repo.listRecipes().some((r) => r.spellId === ref.id) : repo.listItems().some((it) => it.id === ref.id);
+    if (exists && !opts.force) {
+      result.skipped++;
+    } else {
+      if (i > 0) await sleep(BULK_DELAY_MS);
+      try {
+        if (ref.type === 'spell') {
+          const r = await importRecipe(repo, ref.id, { force: opts.force });
+          result.warnings.push(...r.warnings.map((w) => `${r.recipe.imported.name}: ${w}`));
+          result.errors.push(...r.itemErrors);
+        } else {
+          await importItem(repo, ref.id, { force: opts.force });
+        }
+        result.imported++;
+      } catch (e) {
+        result.errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    // Tag pasted recipes with the chosen profession, including ones that were already imported.
+    if (ref.type === 'spell' && opts.profession && setRecipeProfession(repo, ref.id, opts.profession)) result.tagged++;
+    onProgress(i + 1, ordered.length);
+  }
+  return result;
 }
 
 /** Manual bulk refresh of Wowhead records older than maxAgeMs (REQ-1.3). */

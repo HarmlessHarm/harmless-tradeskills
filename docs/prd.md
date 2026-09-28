@@ -83,7 +83,7 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
 
 ## Open questions
 - What is the "unit" of a workflow for per-unit figures: the first step's product, a user-chosen item (e.g. per glove), or per run of the first step?
-- Created quantity parsing: tooltips show "(2)" after green created items (gloves, wand) but not white ones (oil). This appears to be a quality marker, not a quantity. Test a recipe that genuinely creates several items before trusting any quantity parsed from tooltips; until then default to 1 and allow manual override.
+- Created quantity parsing: tooltips show "(2)" after some created items (gloves, wand, and the white Bolt of Linen Cloth) but not others (oil). It is not a quality marker, and its meaning is unknown. Test a recipe that genuinely creates several items before trusting any quantity parsed from tooltips; until then default to 1 and allow manual override.
 - Forever AH fee values (cut per AH type, deposit rates, available durations) need verifying in beta/launch.
 - DE rule values for the relevant brackets: seed from Classic knowledge and validate against DE Tracker totals, or wait for Wowhead data?
 - Default batch size N and default per-action / per-batch overheads.

@@ -8,7 +8,7 @@ Product docs live in [`docs/`](docs): [PRD](docs/prd.md), [architecture](docs/ar
 
 - **Workflows**: saved routes such as the DE shuffle (linen to bolts to gloves, disenchant, dust and essence into oil and wands). The engine links steps, solves runs per unit, and shows profit per unit, time, gold per hour and a simulated P5 / median / P95 for a batch, with the worst case up front.
 - **AH flip**: profit after the cut, deposit lost per failed listing, and how many relists a flip can absorb.
-- **Items and recipes**: paste a Wowhead Forever link or ID to import. Missing reagents are imported on demand. Any field can be overridden by hand; overrides survive refreshes.
+- **Items and recipes**: paste a Wowhead Forever link or ID to import. Missing reagents are imported on demand. For many at once, select rows in any Wowhead table, copy, and paste into Bulk import. Any field can be overridden by hand; overrides survive refreshes.
 - **Disenchant rules**: a hand-maintained table by quality, item level and armor vs weapon. Any matching item can be a "Disenchant X" step.
 - **Settings**: AH cut and deposit rates, overheads, batch size, bulk refresh of old Wowhead data, and .sqlite export/import.
 
@@ -41,6 +41,6 @@ npm run build      # typecheck + production build
 
 ## Still to verify
 
-- **Wowhead parsing** was written against the documented response shape, not live responses (the build environment cannot reach Wowhead). Import a few items and recipes and check them; each record keeps its raw tooltip for comparison. If something parses wrong, the fix goes in `src/wowhead/adapter.ts`, and the test fixtures in `adapter.test.ts` should be replaced with real captured responses.
+- **Wowhead parsing** is tested against real Forever responses saved in `src/wowhead/fixtures/` (fetched outside the build environment, which cannot reach Wowhead). When a tooltip parses wrong, save the raw response there, add a test in `adapter.test.ts`, and fix `src/wowhead/adapter.ts`.
 - **AH cut and deposit rates** are Classic placeholders. Check them in game and update them in Settings.
 - **Disenchant rules** are seeded with Classic values for uncommon items level 5 to 15. Check against DE Tracker totals.

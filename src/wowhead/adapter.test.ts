@@ -1,38 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText } from './adapter';
+import { extractProfessions, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
 
-/*
- * These fixtures follow the shape of Wowhead tooltip responses but were written by hand, because the
- * endpoint is not reachable from the build environment. Replace them with captured real responses
- * (e.g. save `/wh/item/4307` from the browser) when parsing is verified against Forever data.
- */
-const GLOVES = {
-  name: 'Heavy Linen Gloves',
-  quality: 2,
-  icon: 'inv_gauntlets_18',
-  tooltip:
-    '<table><tr><td><!--nstart--><b class="q2">Heavy Linen Gloves</b><!--nend--><!--ndstart--><!--ndend--><span class="q"><br>Item Level <!--ilvl-->10</span><br><!--bo-->Binds when equipped<table width="100%"><tr><td>Hands</td><th><!--scstart4:1--><span class="q1">Cloth</span><!--scend--></th></tr></table><span><!--amr-->9 Armor</span><br><!--rlvl-->Requires Level 5<br></td></tr></table><table><tr><td><div class="whtt-sellprice">Sell Price: <span class="moneycopper">22</span></div></td></tr></table>',
-};
-
-const WAND = {
-  name: 'Greater Magic Wand',
-  quality: 2,
-  tooltip:
-    '<table><tr><td><b class="q2">Greater Magic Wand</b><br>Item Level 13<br><table width="100%"><tr><td>Ranged</td><th>Wand</th></tr></table><table width="100%"><tr><td>12 - 23 Arcane Damage</td><th>Speed 1.50</th></tr></table>(11.7 damage per second)<br></td></tr></table><table><tr><td><div class="whtt-sellprice">Sell Price: <span class="moneysilver">11</span> <span class="moneycopper">4</span></div></td></tr></table>',
-};
-
-const GLOVES_SPELL = {
-  name: 'Heavy Linen Gloves',
-  icon: 'inv_gauntlets_18',
-  tooltip:
-    '<table><tr><td><table width="100%"><tr><td><b>Heavy Linen Gloves</b></td></tr></table><table width="100%"><tr><td>5 sec cast</td></tr></table><div class="whtt-reagents">Reagents: <a href="/forever/item=2996/bolt-of-linen-cloth">Bolt of Linen Cloth</a> (2), <a href="/forever/item=2320/coarse-thread">Coarse Thread</a></div></td></tr></table><table><tr><td><span class="q2"><a href="/forever/item=4307/heavy-linen-gloves">Heavy Linen Gloves</a></span> (2)</td></tr></table>',
-};
-
-const OIL_SPELL = {
-  name: 'Minor Wizard Oil',
-  tooltip:
-    '<table><tr><td><b>Minor Wizard Oil</b><br>5 sec cast<br>Tools: <a href="/forever/item=6218">Runed Copper Rod</a><br>Reagents: <a href="/forever/item=10940">Strange Dust</a>, <a href="/forever/item=17034">Maple Seed</a>, <a href="/forever/item=3371">Empty Vial</a><br></td></tr></table><table><tr><td><a href="/forever/item=20744">Minor Wizard Oil</a></td></tr></table>',
-};
+/** Real Forever tooltip responses, saved byte for byte. See fixtures/. */
+const fixture = (name: string): TooltipResponse =>
+  JSON.parse(readFileSync(fileURLToPath(new URL(`./fixtures/${name}.json`, import.meta.url)), 'utf8'));
 
 describe('parseWowheadRef', () => {
   it('reads pasted URLs', () => {
@@ -46,57 +19,131 @@ describe('parseWowheadRef', () => {
   });
 });
 
-describe('item tooltips', () => {
+describe('extractWowheadRefs', () => {
+  it('reads item and spell links from a copied listview selection', () => {
+    // Shape of a browser clipboard copy of two recipe rows: icon link, name link, reagent links, other links.
+    const html = `<table><tbody>
+      <tr><td><a href="https://www.wowhead.com/forever/item=4307/heavy-linen-gloves"><ins></ins></a></td>
+      <td><a href="https://www.wowhead.com/forever/spell=3840/heavy-linen-gloves">Heavy Linen Gloves</a></td>
+      <td><a href="/forever/item=2996/bolt-of-linen-cloth">Bolt of Linen Cloth</a> 2 <a href="/forever/item=2320">Coarse&nbsp;Thread</a></td>
+      <td><a href="/forever/skill=197">Tailoring</a> <a href="/forever/npc=1103">Eldrin</a></td></tr>
+      <tr><td><a href="https://www.wowhead.com/forever/item=4307/heavy-linen-gloves">Heavy Linen Gloves</a></td></tr>
+    </tbody></table>`;
+    expect(extractWowheadRefs(html)).toEqual([
+      { type: 'item', id: 4307, name: 'Heavy Linen Gloves' },
+      { type: 'spell', id: 3840, name: 'Heavy Linen Gloves' },
+      { type: 'item', id: 2996, name: 'Bolt of Linen Cloth' },
+      { type: 'item', id: 2320, name: 'Coarse Thread' },
+    ]);
+  });
+  it('falls back to URLs in plain text', () => {
+    const text = 'https://www.wowhead.com/forever/spell=25124/minor-wizard-oil\nhttps://www.wowhead.com/forever/item=10940';
+    expect(extractWowheadRefs('', text)).toEqual([
+      { type: 'spell', id: 25124, name: null },
+      { type: 'item', id: 10940, name: null },
+    ]);
+  });
+});
+
+describe('extractProfessions', () => {
+  it('reads profession names from skill links and ignores bare skill levels', () => {
+    const html = '<a href="/forever/skill=197/tailoring">Tailoring</a> <a href="/forever/skill=197">75</a> <a href="/forever/skill=197">Tailoring</a>';
+    expect(extractProfessions(html)).toEqual(['Tailoring']);
+    expect(extractProfessions('<a href="/forever/item=1">x</a>')).toEqual([]);
+  });
+});
+
+describe('item tooltips (real responses)', () => {
   it('parses an armor item', () => {
-    expect(parseItemTooltip(GLOVES)).toEqual({
+    expect(parseItemTooltip(fixture('item-4307'))).toEqual({
       name: 'Heavy Linen Gloves',
       quality: 2,
       itemLevel: 10,
       itemClass: 'armor',
       subclass: 'Cloth',
-      vendorSell: 22,
-      icon: 'inv_gauntlets_18',
+      vendorSell: 29,
+      icon: 'inv_gauntlets_05',
     });
   });
-  it('recognises a weapon without subclass markers and reads silver', () => {
-    const r = parseItemTooltip(WAND);
-    expect(r.itemClass).toBe('weapon');
-    expect(r.subclass).toBe('Wand');
-    expect(r.itemLevel).toBe(13);
-    expect(r.vendorSell).toBe(1104);
+  it('parses a weapon with a silver and copper sell price', () => {
+    expect(parseItemTooltip(fixture('item-11288'))).toEqual({
+      name: 'Greater Magic Wand',
+      quality: 2,
+      itemLevel: 23,
+      itemClass: 'weapon',
+      subclass: 'Wand',
+      vendorSell: 1535,
+      icon: 'inv_staff_07',
+    });
+  });
+  it('parses reagents and tools as "other"', () => {
+    expect(parseItemTooltip(fixture('item-2589'))).toMatchObject({ name: 'Linen Cloth', quality: 1, itemLevel: 5, itemClass: 'other', vendorSell: 13 });
+    expect(parseItemTooltip(fixture('item-10940'))).toMatchObject({ name: 'Strange Dust', itemLevel: 10, itemClass: 'other', vendorSell: 1 });
+    expect(parseItemTooltip(fixture('item-6218'))).toMatchObject({ name: 'Runed Copper Rod', itemLevel: 5, itemClass: 'other', vendorSell: 24 });
   });
   it('handles items with no sell price', () => {
     expect(parseItemTooltip({ name: 'Quest thing', tooltip: '<b class="q1">Quest thing</b><br>Quest Item' }).vendorSell).toBeNull();
   });
   it('flattens tooltip html to text', () => {
-    expect(tooltipText(GLOVES.tooltip)).toContain('Item Level 10');
+    expect(tooltipText(fixture('item-4307').tooltip)).toContain('Item Level 10');
   });
 });
 
-describe('spell tooltips', () => {
-  it('parses reagents with quantities, cast time and created item', () => {
-    const r = parseSpellTooltip(GLOVES_SPELL);
-    expect(r.fields.castTimeMs).toBe(5000);
+describe('spell tooltips (real responses)', () => {
+  const recipe = (name: string) => parseSpellTooltip(fixture(name));
+
+  it('Heavy Linen Gloves: reagents with quantities, fractional cast time, created item', () => {
+    const r = recipe('spell-3840');
+    expect(r.fields.name).toBe('Heavy Linen Gloves');
+    expect(r.fields.castTimeMs).toBe(5125);
     expect(r.fields.inputs).toEqual([
       { itemId: 2996, qty: 2 },
       { itemId: 2320, qty: 1 },
     ]);
-    expect(r.fields.tools).toEqual([]);
-    // "(2)" after a green created item is not a quantity.
+    // "(2)" after the created item is not treated as a quantity.
     expect(r.fields.outputs).toEqual([{ itemId: 4307, chance: 1, minQty: 1, maxQty: 1 }]);
-    expect(r.referencedItems.sort()).toEqual([2320, 2996, 4307]);
+    expect(r.fields.tools).toEqual([]);
+    expect(r.referencedItems).toEqual([2996, 2320, 4307]);
     expect(r.warnings).toEqual([]);
   });
-  it('separates tools from reagents', () => {
-    const r = parseSpellTooltip(OIL_SPELL);
-    expect(r.fields.tools).toEqual([6218]);
-    expect(r.fields.inputs.map((i) => i.itemId)).toEqual([10940, 17034, 3371]);
-    expect(r.fields.outputs[0].itemId).toBe(20744);
-  });
-  it('warns when no created item is found', () => {
-    const r = parseSpellTooltip({ name: 'Disenchant', tooltip: '<b>Disenchant</b><br>3 sec cast<br>Turns an item into dust.' });
+
+  it('Bolt of Linen Cloth: single reagent', () => {
+    const r = recipe('spell-2963');
     expect(r.fields.castTimeMs).toBe(3000);
-    expect(r.warnings.length).toBeGreaterThan(0);
+    expect(r.fields.inputs).toEqual([{ itemId: 2589, qty: 2 }]);
+    expect(r.fields.outputs[0].itemId).toBe(2996);
+  });
+
+  it('Minor Wizard Oil: skips tools and the "Creates" line', () => {
+    const r = recipe('spell-25124');
+    expect(r.fields.castTimeMs).toBe(5000);
+    expect(r.fields.inputs).toEqual([
+      { itemId: 10940, qty: 1 },
+      { itemId: 17034, qty: 1 },
+      { itemId: 3371, qty: 1 },
+    ]);
+    expect(r.fields.tools).toEqual([]);
+    expect(r.fields.outputs[0].itemId).toBe(20744);
+    expect(r.referencedItems).not.toContain(6218);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('Greater Magic Wand: quantity on the last reagent', () => {
+    const r = recipe('spell-14807');
+    expect(r.fields.castTimeMs).toBe(10000);
+    expect(r.fields.inputs).toEqual([
+      { itemId: 4470, qty: 1 },
+      { itemId: 10938, qty: 2 },
+    ]);
+    expect(r.fields.outputs[0].itemId).toBe(11288);
+  });
+
+  it('Disenchant: no reagents or created item, with warnings', () => {
+    const r = recipe('spell-13262');
+    expect(r.fields.castTimeMs).toBe(3000);
+    expect(r.fields.inputs).toEqual([]);
+    expect(r.fields.outputs).toEqual([]);
+    expect(r.warnings).toHaveLength(2);
   });
 });
 
@@ -105,7 +152,7 @@ describe('fetchTooltip', () => {
     let url = '';
     const fake = async (u: string) => {
       url = u;
-      return new Response(JSON.stringify(GLOVES));
+      return new Response(JSON.stringify(fixture('item-4307')));
     };
     await fetchTooltip({ type: 'item', id: 4307 }, fake);
     expect(url).toBe('/wh/item/4307');

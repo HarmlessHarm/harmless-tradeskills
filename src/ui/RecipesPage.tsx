@@ -1,25 +1,102 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { effectiveRecipe } from '../engine/items';
-import type { RecipeFields, RecipeOutput, RecipeRecord } from '../engine/types';
+import type { Recipe, RecipeFields, RecipeOutput, RecipeRecord } from '../engine/types';
+import { professionOptions } from '../professions';
+import { setProfession } from '../state/actions';
 import { importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, ItemPicker, NumberInput, Panel } from './common';
+import { deleteConfirmText, recipeUsage } from '../state/usage';
+import { BulkImport } from './BulkImport';
+import { RowActions, RowCheckbox, SelectAll, SelectionBar, useSelection } from './Selection';
+import { useEditSession } from './useEditSession';
 import { ImportBox } from './ItemsPage';
+import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
 const KINDS = ['craft', 'disenchant', 'convert'];
+const ALL = '__all';
+const NONE = '__none';
+type RecipeSortKey = 'name' | 'profession' | 'kind' | 'cast' | 'ilvl';
 
 export function RecipesPage() {
-  const { recipeRecords, mutate } = useStore();
-  const [editing, setEditing] = useState<string | null>(null);
-  const [filter, setFilter] = useState('');
+  const { recipeRecords, mutate, engine, workflows, deRules } = useStore();
+  const edit = useEditSession(recipeRecords, (r) => r.id, (r) => mutate((repo) => repo.saveRecipe(r)));
+  const editing = edit.editing;
+  const sel = useSelection<string>();
+  const [search, setSearch] = useState('');
+  const [profFilter, setProfFilter] = useState<string>(ALL);
+  const [bulk, setBulk] = useState(false);
+  const sort = useSort<RecipeSortKey>('name');
+  const [bulkProf, setBulkProf] = useState('');
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
 
-  const f = filter.trim().toLowerCase();
-  const rows = recipeRecords
-    .map((r) => ({ r, rec: effectiveRecipe(r) }))
-    .filter(({ rec }) => !f || rec.name.toLowerCase().includes(f) || rec.id.includes(f))
-    .sort((a, b) => a.rec.name.localeCompare(b.rec.name));
-  const editRecord = recipeRecords.find((r) => r.id === editing);
+  const itemName = (id: number) => engine.items.get(id)?.name.toLowerCase() ?? '';
+  const createdLevel = (rec: Recipe) => {
+    const id = rec.outputs[0]?.itemId;
+    return id === undefined ? null : (engine.items.get(id)?.itemLevel ?? null);
+  };
+  const all = recipeRecords.map((r) => ({ r, rec: effectiveRecipe(r) }));
+  const usedProfessions = [...new Set(all.map(({ rec }) => rec.profession).filter((p): p is string => !!p))].sort();
+  const hasUnassigned = all.some(({ rec }) => !rec.profession);
+
+  // Search matches the recipe name, its reagents' names and the created item's name.
+  const q = search.trim().toLowerCase();
+  const matches = (rec: Recipe) =>
+    !q ||
+    rec.name.toLowerCase().includes(q) ||
+    rec.inputs.some((i) => itemName(i.itemId).includes(q)) ||
+    rec.outputs.some((o) => itemName(o.itemId).includes(q));
+  const filtered = all
+    .filter(({ rec }) => matches(rec))
+    .filter(({ rec }) => profFilter === ALL || (profFilter === NONE ? !rec.profession : rec.profession === profFilter));
+  const rows = sortRows(
+    filtered,
+    sort,
+    ({ rec }, key): SortValue => {
+      switch (key) {
+        case 'name':
+          return rec.name;
+        case 'profession':
+          return rec.profession;
+        case 'kind':
+          return rec.kind;
+        case 'cast':
+          return rec.castTimeMs;
+        case 'ilvl':
+          return createdLevel(rec);
+      }
+    },
+    ({ rec }) => rec.name,
+  );
+  const visibleKeys = rows.map(({ r }) => r.id);
+  const filtering = q !== '' || profFilter !== ALL;
+
+  /** Bulk edit: set or clear the profession on every selected recipe. */
+  const applyProfession = () => {
+    const profession = bulkProf.trim() || null;
+    const records = recipeRecords.filter((r) => sel.has(r.id));
+    const changed = mutate((repo) => setProfession(repo, records, profession));
+    // Keep an open editor's draft in step, so saving it later does not undo this.
+    if (editing !== null && sel.has(editing)) {
+      edit.update((r) => {
+        const overrides = { ...r.overrides };
+        delete overrides.profession;
+        return { ...r, imported: { ...r.imported, profession }, overrides };
+      });
+    }
+    setBulkMsg(`${profession ? `Set ${profession}` : 'Cleared profession'} on ${changed} recipe${changed === 1 ? '' : 's'}`);
+  };
+
+  const remove = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const names = ids.map((id) => engine.recipes.get(id)?.name ?? id);
+    const usage = ids.flatMap((id) => recipeUsage({ engine, workflows, deRules }, id));
+    if (!confirm(deleteConfirmText('recipe', names, usage))) return;
+    mutate((repo) => ids.forEach((id) => repo.deleteRecipe(id)));
+    sel.setAll(ids, false);
+    if (editing !== null && ids.includes(editing)) edit.drop();
+  };
 
   const createManual = () => {
     const id = mutate((repo) => {
@@ -37,31 +114,101 @@ export function RecipesPage() {
       });
       return id;
     });
-    setEditing(id);
+    setSearch('');
+    setProfFilter(ALL);
+    edit.open(id);
   };
 
   return (
     <div className="stack">
       <Panel
-        title="Recipes"
+        title="Import recipes"
         actions={
           <>
-            <input className="search" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            {!bulk && <button onClick={() => setBulk(true)}>Bulk import</button>}
             <button onClick={createManual}>New by hand</button>
           </>
         }
       >
         <ImportBox defaultType="spell" />
+        {bulk && <BulkImport onClose={() => setBulk(false)} />}
         <p className="small muted">
           Disenchanting needs no recipe here: add a Disenchant step to a workflow and the matching disenchant rule is used.
         </p>
+      </Panel>
+      <Panel title={`Recipes (${filtering ? `${rows.length} of ${recipeRecords.length}` : recipeRecords.length})`}>
+        <div className="table-filters">
+          <input
+            type="search"
+            className="search wide"
+            placeholder="Search recipe, reagent or created item"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search recipes"
+          />
+          <select value={profFilter} onChange={(e) => setProfFilter(e.target.value)} aria-label="Filter by profession">
+            <option value={ALL}>All professions</option>
+            {usedProfessions.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+            {hasUnassigned && <option value={NONE}>No profession set</option>}
+          </select>
+          {filtering && (
+            <button
+              className="link-btn"
+              onClick={() => {
+                setSearch('');
+                setProfFilter(ALL);
+              }}
+            >
+              clear filters
+            </button>
+          )}
+        </div>
+        <SelectionBar
+          count={sel.selected.size}
+          onDelete={() => remove([...sel.selected])}
+          onClear={() => {
+            sel.clear();
+            setBulkMsg(null);
+          }}
+        >
+          <span className="bulk-edit">
+            <input
+              className="short-input"
+              list="bulk-edit-professions"
+              placeholder="Profession"
+              value={bulkProf}
+              onChange={(e) => {
+                setBulkProf(e.target.value);
+                setBulkMsg(null);
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && applyProfession()}
+              aria-label="Profession for selected recipes"
+            />
+            <datalist id="bulk-edit-professions">
+              {professionOptions(usedProfessions).map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+            <button onClick={applyProfession}>{bulkProf.trim() ? 'Set profession' : 'Clear profession'}</button>
+            {bulkMsg && <span className="small muted">{bulkMsg}</span>}
+          </span>
+        </SelectionBar>
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Recipe</th>
-                <th>Kind</th>
-                <th className="r">Cast</th>
+                <th className="check">
+                  <SelectAll keys={visibleKeys} sel={sel} />
+                </th>
+                <SortHeader label="Recipe" k="name" sort={sort} />
+                <SortHeader label="Profession" k="profession" sort={sort} />
+                <SortHeader label="Kind" k="kind" sort={sort} />
+                <SortHeader label="Cast" k="cast" sort={sort} className="r" />
+                <SortHeader label="iLvl" k="ilvl" sort={sort} className="r" />
                 <th>Reagents</th>
                 <th>Creates</th>
                 <th>Source</th>
@@ -70,7 +217,11 @@ export function RecipesPage() {
             </thead>
             <tbody>
               {rows.map(({ r, rec }) => (
-                <tr key={r.id}>
+                <Fragment key={r.id}>
+                <tr className={`${sel.has(r.id) ? 'selected' : ''} ${editing === r.id ? 'editing' : ''}`}>
+                  <td className="check">
+                    <RowCheckbox k={r.id} label={`Select ${rec.name}`} visibleKeys={visibleKeys} sel={sel} />
+                  </td>
                   <td>
                     {r.spellId ? (
                       <a href={wowheadUrl('spell', r.spellId)} target="_blank" rel="noreferrer">
@@ -80,17 +231,16 @@ export function RecipesPage() {
                       rec.name
                     )}
                   </td>
+                  <td className="small">{rec.profession ?? <span className="muted">-</span>}</td>
                   <td className="small">{rec.kind}</td>
                   <td className="r small">{rec.castTimeMs / 1000}s</td>
+                  <td className="r" title="Item level of the created item">
+                    {createdLevel(rec) ?? <span className="muted">-</span>}
+                  </td>
                   <td className="small">
                     {rec.inputs.map((i, k) => (
                       <div key={k}>
                         {i.qty} <ItemName id={i.itemId} />
-                      </div>
-                    ))}
-                    {rec.tools.map((t) => (
-                      <div key={t} className="muted">
-                        tool: <ItemName id={t} />
                       </div>
                     ))}
                   </td>
@@ -109,16 +259,36 @@ export function RecipesPage() {
                     <span className="muted">{ago(r.fetchedAt ?? r.updatedAt)}</span>
                   </td>
                   <td className="actions">
-                    <button className="link-btn" onClick={() => setEditing(editing === r.id ? null : r.id)}>
-                      {editing === r.id ? 'close' : 'edit'}
-                    </button>
+                    <RowActions
+                      name={rec.name}
+                      editing={editing === r.id}
+                      dirty={editing === r.id && edit.dirty}
+                      onEdit={() => edit.open(r.id)}
+                      onSave={edit.save}
+                      onDelete={() => remove([r.id])}
+                    />
                   </td>
                 </tr>
+                {editing === r.id && edit.working && (
+                  <tr className="editor-row">
+                    <td colSpan={10}>
+                      <RecipeEditor
+                        record={edit.working}
+                        dirty={edit.dirty}
+                        update={edit.update}
+                        onSave={edit.save}
+                        onCancel={edit.cancel}
+                        onDelete={() => remove([r.id])}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
-                    {recipeRecords.length ? 'No match.' : 'No recipes yet. Paste a Wowhead spell link above.'}
+                  <td colSpan={10} className="muted">
+                    {recipeRecords.length ? 'No recipes match these filters.' : 'No recipes yet. Paste a Wowhead spell link above.'}
                   </td>
                 </tr>
               )}
@@ -126,15 +296,28 @@ export function RecipesPage() {
           </table>
         </div>
       </Panel>
-      {editRecord && <RecipeEditor key={editRecord.id} record={editRecord} onClose={() => setEditing(null)} />}
     </div>
   );
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () => void }) {
-  const { mutate, mutateAsync } = useStore();
+function RecipeEditor({
+  record,
+  dirty,
+  update,
+  onSave,
+  onCancel,
+  onDelete,
+}: {
+  record: RecipeRecord;
+  dirty: boolean;
+  update: (fn: (r: RecipeRecord) => RecipeRecord) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const { mutateAsync, engine } = useStore();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const rec = effectiveRecipe(record);
@@ -142,15 +325,12 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
 
   /** Manual recipes edit their base values; imported ones get an override per field (DEC-6). */
   const set = <K extends keyof RecipeFields>(key: K, value: RecipeFields[K]) =>
-    mutate((repo) => {
-      if (isManual) {
-        repo.saveRecipe({ ...record, imported: { ...record.imported, [key]: value }, updatedAt: Date.now() });
-        return;
-      }
-      const overrides = { ...record.overrides };
-      if (same(record.imported[key], value)) delete overrides[key];
+    update((r) => {
+      if (r.source === 'manual') return { ...r, imported: { ...r.imported, [key]: value } };
+      const overrides = { ...r.overrides };
+      if (same(r.imported[key], value)) delete overrides[key];
       else overrides[key] = value;
-      repo.saveRecipe({ ...record, overrides, updatedAt: Date.now() });
+      return { ...r, overrides };
     });
 
   const setOutput = (i: number, patch: Partial<RecipeOutput>) => set('outputs', rec.outputs.map((o, k) => (k === i ? { ...o, ...patch } : o)));
@@ -162,7 +342,7 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
       actions={
         <>
           {!isManual && Object.keys(record.overrides).length > 0 && (
-            <button onClick={() => mutate((repo) => repo.saveRecipe({ ...record, overrides: {}, updatedAt: Date.now() }))}>Reset to imported</button>
+            <button onClick={() => update((r) => ({ ...r, overrides: {} }))}>Reset to imported</button>
           )}
           {record.spellId && (
             <button
@@ -183,16 +363,13 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
               {busy ? 'Refreshing...' : 'Refresh from Wowhead'}
             </button>
           )}
-          <button
-            className="danger"
-            onClick={() => {
-              if (confirm(`Delete recipe "${rec.name}"? Workflows using it will show an error.`)) {
-                mutate((repo) => repo.deleteRecipe(record.id));
-                onClose();
-              }
-            }}
-          >
+          <button className="danger" onClick={onDelete}>
             Delete
+          </button>
+          {dirty && <span className="unsaved">Unsaved changes</span>}
+          <button onClick={onCancel}>{dirty ? 'Cancel' : 'Close'}</button>
+          <button className="primary" onClick={onSave}>
+            Save
           </button>
         </>
       }
@@ -215,7 +392,12 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
         </label>
         <label>
           Profession
-          <input value={rec.profession ?? ''} onChange={(e) => set('profession', e.target.value || null)} />
+          <input list="recipe-professions" value={rec.profession ?? ''} onChange={(e) => set('profession', e.target.value || null)} />
+          <datalist id="recipe-professions">
+            {professionOptions([...engine.recipes.values()].map((r) => r.profession)).map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
         </label>
         <label>
           Cast time (s)
@@ -252,19 +434,6 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
         </tbody>
       </table>
       <AddItemRow label="Add reagent" onAdd={(id) => set('inputs', [...rec.inputs, { itemId: id, qty: 1 }])} />
-
-      <h3>Tools (required, not used up)</h3>
-      <div className="chips">
-        {rec.tools.map((t) => (
-          <span key={t} className="chip">
-            <ItemName id={t} />
-            <button className="icon-btn" onClick={() => set('tools', rec.tools.filter((x) => x !== t))} aria-label="Remove tool">
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
-      <AddItemRow label="Add tool" onAdd={(id) => !rec.tools.includes(id) && set('tools', [...rec.tools, id])} />
 
       <h3>Outputs</h3>
       <label className="inline small">
@@ -312,7 +481,7 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
       {rec.outputMode === 'exclusive' && chanceSum > 1.0001 && <p className="warn small">Chances add up to more than 100%.</p>}
       <AddItemRow label="Add output" onAdd={(id) => set('outputs', [...rec.outputs, { itemId: id, chance: 1, minQty: 1, maxQty: 1 }])} />
       <p className="small muted">
-        Wowhead shows "(2)" after some created items; that looks like a quality marker, so imports use quantity 1. Change it here if a recipe really
+        Wowhead shows "(2)" after some created items, but it is not a count we can trust yet, so imports use quantity 1. Change it here if a recipe really
         makes more.
       </p>
 

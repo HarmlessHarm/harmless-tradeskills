@@ -20,7 +20,7 @@ React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browse
 ## Integration points
 - **Wowhead tooltip endpoint** (verified working for Forever with plain HTTP):
   - `https://nether.wowhead.com/forever/tooltip/item/{id}` -> JSON `{name, quality, icon, tooltip}`; tooltip HTML contains item level, slot, armor/weapon type, "Sell Price" in copper.
-  - `https://nether.wowhead.com/forever/tooltip/spell/{id}` -> JSON with tooltip HTML containing cast time ("5 sec cast"), `Tools:`, `Reagents:` as item links with `(n)` quantities, and the created item.
+  - `https://nether.wowhead.com/forever/tooltip/spell/{id}` -> JSON with tooltip HTML containing cast time ("5.125 sec cast") in the first table, then `Reagents:<br /><div class="indent q1">` with item links followed by `&nbsp;(n)` quantities, then the created item link followed by its own tooltip. `Tools:` link to an item search rather than an item ID and are ignored (the crafter is assumed to have them). Real responses are saved in `src/wowhead/fixtures/`.
   - Unofficial and undocumented (used by Wowhead's own tooltip script). Full pages at `www.wowhead.com/forever/...` return a bot check to plain HTTP, so vendor buy prices, DE tables and "created by" lookups are not available this way. [ref: DEC-4, DEC-7]
   - Accept pasted URLs like `https://www.wowhead.com/forever/spell=3840/heavy-linen-gloves` and extract type + ID.
 - **Known IDs for the DE shuffle**: Heavy Linen Gloves item 4307 / spell 3840; Bolt of Linen Cloth item 2996 / spell 2963; Linen Cloth 2589; Coarse Thread 2320; Disenchant spell 13262; Greater Magic Wand spell 14807; Minor Wizard Oil spell 25124.
