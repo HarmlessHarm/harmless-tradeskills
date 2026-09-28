@@ -43,4 +43,4 @@ npm run build      # typecheck + production build
 
 - **Wowhead parsing** is tested against real Forever responses saved in `src/wowhead/fixtures/` (fetched outside the build environment, which cannot reach Wowhead). When a tooltip parses wrong, save the raw response there, add a test in `adapter.test.ts`, and fix `src/wowhead/adapter.ts`.
 - **AH cut and deposit rates** are Classic placeholders. Check them in game and update them in Settings.
-- **Disenchant rules** are seeded with Classic values for uncommon items level 5 to 15. Check against DE Tracker totals.
+- **Disenchant rules** are seeded with the Classic table (uncommon, rare and epic, item level up to 65, epics to 94) from AzerothCore's loot data; see `src/db/deSeed.ts` for sources. Check against DE Tracker totals.
