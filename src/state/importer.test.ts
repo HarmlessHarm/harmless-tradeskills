@@ -1,8 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
-import { migrate, Repo } from '../db/repo';
+import { freshRepo } from '../test/db';
 import { bulkImport, importRecipe, importVendorPrices } from './importer';
 
 /** Serves the saved real Wowhead responses; unknown IDs get a minimal item. */
@@ -12,13 +11,6 @@ const fetcher = async (url: string) => {
   const body = existsSync(file) ? readFileSync(file, 'utf8') : JSON.stringify({ name: `Item ${id}`, quality: 1, tooltip: '<b>x</b>' });
   return new Response(body);
 };
-
-async function freshRepo() {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  migrate(db);
-  return new Repo(db);
-}
 
 describe('importer professions', () => {
   it('tags pasted recipes, including ones already imported, and keeps the tag on refresh', async () => {

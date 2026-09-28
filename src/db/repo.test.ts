@@ -1,22 +1,17 @@
 import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
+import { freshRepo } from '../test/db';
 import { deShuffle } from '../test/fixtures';
 import { DE_SEED_NOTE } from './deSeed';
-import { migrate, Repo } from './repo';
-import { MIGRATIONS } from './schema';
-
-async function freshRepo() {
-  const SQL = await initSqlJs();
-  const db = new SQL.Database();
-  migrate(db);
-  return new Repo(db);
-}
+import { dbKind, migrate, Repo, splitLegacy } from './repo';
+import { LEGACY_MIGRATIONS } from './schema';
 
 describe('repo', () => {
   it('migrates idempotently and seeds the Classic DE table', async () => {
     const repo = await freshRepo();
-    migrate(repo.db);
+    migrate(repo.data, 'data');
+    migrate(repo.user, 'user');
     const rules = repo.listDeRules();
     // 11 green, 8 rare and 5 epic bands, each for armor and weapons.
     expect(rules).toHaveLength(48);
@@ -32,12 +27,12 @@ describe('repo', () => {
   it('seeding the DE table keeps rules the user edited', async () => {
     const SQL = await initSqlJs();
     const db = new SQL.Database();
-    db.exec(MIGRATIONS[0]);
+    db.exec(LEGACY_MIGRATIONS[0]);
     db.exec('PRAGMA user_version = 1');
     // User edited the armor starter rule; the weapon one is untouched.
     db.exec(`UPDATE de_rules SET notes = 'mine' WHERE item_class = 'armor'`);
-    migrate(db);
-    const rules = new Repo(db).listDeRules();
+    const { data, user } = splitLegacy(db, (b) => new SQL.Database(b));
+    const rules = new Repo(data, user).listDeRules();
     const low = rules.filter((r) => r.quality === 2 && r.ilvlMin <= 15);
     expect(low.map((r) => [r.itemClass, r.ilvlMin, r.notes])).toEqual([
       ['armor', 5, 'mine'],
@@ -96,14 +91,12 @@ describe('repo', () => {
     expect(repo.getConfig().defaultBatchSize).toBe(50);
   });
 
-  it('calls onChange after writes', async () => {
-    const SQL = await initSqlJs();
-    const db = new SQL.Database();
-    migrate(db);
-    let n = 0;
-    const repo = new Repo(db, () => n++);
+  it('calls onChange with the database that changed', async () => {
+    const changed: string[] = [];
+    const repo = await freshRepo((kind) => changed.push(kind));
     repo.addPrice({ itemId: 1, ahPrice: 1, ahPessimistic: null, observedAt: 1 });
-    expect(n).toBe(1);
+    repo.deleteItem(1);
+    expect(changed).toEqual(['user', 'data']);
   });
 
   it('round trips flip favorites', async () => {
@@ -112,5 +105,52 @@ describe('repo', () => {
     const favs = [{ itemId: 4306, buyPrice: 500, sellPrice: null, durationKey: '8h', ahType: 'neutral' as const }];
     repo.saveFlipFavorites(favs);
     expect(repo.listFlipFavorites()).toEqual(favs);
+  });
+});
+
+describe('split databases', () => {
+  it('keeps game data and personal data in separate files', async () => {
+    const repo = await freshRepo();
+    const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();
+    expect(tables(repo.data)).toEqual(['de_rules', 'items', 'recipes']);
+    expect(tables(repo.user)).toEqual(['price_observations', 'settings', 'workflows']);
+    expect(dbKind(repo.data)).toBe('data');
+    expect(dbKind(repo.user)).toBe('user');
+    expect(() => migrate(repo.data, 'user')).toThrow(/Expected a user database/);
+  });
+
+  it('splits a legacy combined file, keeping every row', async () => {
+    const SQL = await initSqlJs();
+    const legacy = new SQL.Database();
+    for (const [i, m] of LEGACY_MIGRATIONS.entries()) {
+      legacy.exec(m);
+      legacy.exec(`PRAGMA user_version = ${i + 1}`);
+    }
+    legacy.exec(`INSERT INTO items (id, imported, source, updated_at) VALUES (4306, '{"name":"Silk Cloth"}', 'wowhead', 1)`);
+    legacy.exec(`INSERT INTO workflows (name, steps, updated_at, target_gph) VALUES ('Shuffle', '[]', 1, 5000)`);
+    legacy.exec(`INSERT INTO settings (key, value) VALUES ('flipFavorites', '[{"itemId":4306}]')`);
+    legacy.exec(`INSERT INTO price_observations (item_id, ah_price, observed_at) VALUES (4306, 100, 1)`);
+    expect(dbKind(legacy)).toBe('legacy');
+
+    const { data, user } = splitLegacy(new SQL.Database(legacy.export()), (b) => new SQL.Database(b));
+    const repo = new Repo(data, user);
+    expect(repo.listItems().map((i) => i.id)).toEqual([4306]);
+    expect(repo.listDeRules()).toHaveLength(48);
+    expect(repo.listWorkflows().map((w) => [w.name, w.targetGoldPerHour])).toEqual([['Shuffle', 5000]]);
+    expect(repo.listFlipFavorites()).toEqual([{ itemId: 4306 }]);
+    expect(repo.latestPrices().map((p) => p.ahPrice)).toEqual([100]);
+    expect(data.exec(`SELECT name FROM sqlite_master WHERE name = 'workflows'`)).toEqual([]);
+    expect(user.exec(`SELECT name FROM sqlite_master WHERE name = 'items'`)).toEqual([]);
+
+    // The split files survive a round trip and are recognised by kind.
+    expect(dbKind(new SQL.Database(data.export()))).toBe('data');
+    expect(dbKind(new SQL.Database(user.export()))).toBe('user');
+  });
+
+  it('rejects files that are not ours', async () => {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    db.exec('CREATE TABLE foo (x)');
+    expect(() => dbKind(db)).toThrow(/Not a Harmless Tradeskills database/);
   });
 });

@@ -1,9 +1,13 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../config';
+import type { DbKind } from '../db/repo';
 import type { AhDuration, Config } from '../engine/types';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel } from './common';
+
+const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
+const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data' };
 
 const pct = (x: number) => Math.round(x * 10000) / 100;
 
@@ -17,12 +21,12 @@ export function SettingsPage() {
   const [days, setDays] = useState<number | null>(30);
   const [progress, setProgress] = useState<string | null>(null);
 
-  const download = () => {
-    const bytes = exportDb();
+  const download = (kind: DbKind) => {
+    const bytes = exportDb(kind);
     const blob = new Blob([bytes.slice().buffer], { type: 'application/vnd.sqlite3' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `harmless-tradeskills-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    a.download = `harmless-tradeskills-${FILE_NAME[kind]}-${new Date().toISOString().slice(0, 10)}.sqlite`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -125,10 +129,13 @@ export function SettingsPage() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as a SQLite database. Export it for backups or to move to another machine.
+          Everything is stored in this browser as two SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
+          can be shared with other players. <b>Personal data</b> (workflows, flip favorites, prices, settings) is yours.
+          Export both for backups or to move to another machine. Importing a file replaces only the data it holds.
         </p>
         <div className="add-row">
-          <button onClick={download}>Export .sqlite</button>
+          <button onClick={() => download('data')}>Export game data</button>
+          <button onClick={() => download('user')}>Export personal data</button>
           <button onClick={() => fileRef.current?.click()}>Import .sqlite</button>
           <input
             ref={fileRef}
@@ -139,10 +146,10 @@ export function SettingsPage() {
               const file = e.target.files?.[0];
               e.target.value = '';
               if (!file) return;
-              if (!confirm('Replace all data in this browser with the imported file?')) return;
+              if (!confirm('Replace the data in this browser with the data in the imported file?')) return;
               try {
-                await importDb(new Uint8Array(await file.arrayBuffer()));
-                setDataMsg(`Imported ${file.name}.`);
+                const kinds = await importDb(new Uint8Array(await file.arrayBuffer()));
+                setDataMsg(`Imported ${kinds.map((k) => KIND_LABEL[k]).join(' and ')} from ${file.name}.`);
               } catch (err) {
                 setDataMsg(`Import failed: ${errorText(err)}`);
               }
