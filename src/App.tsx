@@ -1,14 +1,15 @@
-import { useEffect, useState, type ComponentType } from 'react';
+import { Fragment, useEffect, useState, type ComponentType } from 'react';
 import { FlipPage } from './ui/FlipPage';
 import { ItemsPage } from './ui/ItemsPage';
 import { RecipesPage } from './ui/RecipesPage';
 import { SettingsPage } from './ui/SettingsPage';
 import { WorkflowsPage } from './ui/WorkflowsPage';
 
+/** `divider` starts a new group: workflows and flips are personal data, items and recipes game data. */
 const TABS = [
   { key: 'workflows', label: 'Workflows', Page: WorkflowsPage },
   { key: 'flip', label: 'AH flip', Page: FlipPage },
-  { key: 'items', label: 'Items', Page: ItemsPage },
+  { key: 'items', label: 'Items', Page: ItemsPage, divider: true },
   { key: 'recipes', label: 'Recipes', Page: RecipesPage },
   { key: 'settings', label: 'Settings', Page: SettingsPage },
 ] as const;
@@ -43,9 +44,12 @@ export function App() {
         </div>
         <nav className="tabs">
           {TABS.map((t) => (
-            <a key={t.key} href={`#${t.key}`} className={t.key === tab ? 'on' : ''}>
-              {t.label}
-            </a>
+            <Fragment key={t.key}>
+              {'divider' in t && <span className="tab-divider" aria-hidden />}
+              <a href={`#${t.key}`} className={t.key === tab ? 'on' : ''}>
+                {t.label}
+              </a>
+            </Fragment>
           ))}
         </nav>
       </header>
