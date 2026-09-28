@@ -60,16 +60,23 @@ describe('extractVendorPrices', () => {
       money(1, 0, 5),
     )}</tbody></table>`;
     expect(extractVendorPrices(html)).toEqual([
-      { itemId: 2320, name: 'Coarse Thread', price: 10 },
-      { itemId: 2321, name: 'Fine Thread', price: 105 },
-      { itemId: 14341, name: 'Rune Thread', price: 10005 },
+      { itemId: 2320, name: 'Coarse Thread', price: 10, stack: 1, stackPrice: 10 },
+      { itemId: 2321, name: 'Fine Thread', price: 105, stack: 1, stackPrice: 105 },
+      { itemId: 14341, name: 'Rune Thread', price: 10005, stack: 1, stackPrice: 10005 },
     ]);
+  });
+  it('divides a stack\'s cost by the count on its icon, not by numbers in other cells', () => {
+    // Icon with a stack count (drawn twice for the outline), then a changes cell with a "(1)".
+    const html = `<table><tr><td><div class="iconsmall"><a href="/forever/item=3371"></a><span class="glow q1"><div>5</div><div>5</div></span></div></td>
+      <td>Updated<br>Requirements changed (1)</td><td><a href="/forever/item=3371/empty-vial">Empty Vial</a></td>
+      <td><span class="moneysilver">1</span></td></tr></table>`;
+    expect(extractVendorPrices(html)).toEqual([{ itemId: 3371, name: 'Empty Vial', price: 20, stack: 5, stackPrice: 100 }]);
   });
   it('works without row tags and skips rows without a money cost', () => {
     const html = `<a href="/forever/item=1">A</a> <span class="moneysilver">2</span><a href="/forever/item=2">B</a> 3 <a href="/forever/item=3">C</a><span class="moneycopper">7</span>`;
     expect(extractVendorPrices(html)).toEqual([
-      { itemId: 1, name: 'A', price: 200 },
-      { itemId: 3, name: 'C', price: 7 },
+      { itemId: 1, name: 'A', price: 200, stack: 1, stackPrice: 200 },
+      { itemId: 3, name: 'C', price: 7, stack: 1, stackPrice: 7 },
     ]);
   });
 });

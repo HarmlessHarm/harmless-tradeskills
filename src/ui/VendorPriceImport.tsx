@@ -65,7 +65,7 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
       </div>
       <p className="small muted">
         On a vendor's Wowhead Forever page, select rows in the "Sells" table and copy them. Paste below. The listed cost is saved as each item's
-        vendor buy price, so pick a vendor that sells at the base price (no reputation discount).
+        vendor buy price (per item: a stack's cost is divided by its size), so pick a vendor that sells at the base price (no reputation discount).
       </p>
       <textarea className="paste-zone" rows={3} placeholder="Paste here (Ctrl+V)" onPaste={onPaste} value="" onChange={() => {}} />
       {hint && <p className="small warn">{hint}</p>}
@@ -108,6 +108,12 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
                       </td>
                       <td>
                         <Money value={r.price} />
+                        {r.stack > 1 && (
+                          <span className="muted small">
+                            {' '}
+                            each (<Money value={r.stackPrice} /> for {r.stack})
+                          </span>
+                        )}
                       </td>
                       <td>{rec ? <Money value={rec.vendorBuy} /> : <span className="muted">-</span>}</td>
                       <td className="small">
