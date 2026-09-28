@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { findDisenchantRule } from '../engine/disenchant';
-import type { Workflow, WorkflowStep } from '../engine/types';
+import type { Recipe, Workflow, WorkflowStep } from '../engine/types';
 import { analyzeWorkflow, describeStep, dispositionFor, resolveStep, type ExternalInput, type WorkflowAnalysis } from '../engine/workflow';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, NumberInput, Panel, Segmented } from './common';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
+import { searchRecipes } from './recipeSearch';
 
 const QUICKSTART = {
   name: 'DE shuffle',
@@ -405,8 +406,13 @@ function BuySection({
                   <Money value={x.costPerUnit} />
                 </td>
                 <td className="r">
-                  <button className="icon-btn nowrap" onClick={() => onMove(x.itemId)} title={`Buy from ${source === 'ah' ? 'a vendor' : 'the AH'} instead`}>
-                    {source === 'ah' ? 'To vendor' : 'To AH'}
+                  <button
+                    className="icon-btn"
+                    onClick={() => onMove(x.itemId)}
+                    title={`Buy from ${source === 'ah' ? 'a vendor' : 'the AH'} instead`}
+                    aria-label={`Move to ${source === 'ah' ? 'vendor' : 'AH'}`}
+                  >
+                    ⇄
                   </button>
                 </td>
               </tr>
@@ -551,19 +557,13 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
 function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
   const { engine, recipeRecords, mutateAsync } = useStore();
   const [mode, setMode] = useState<'recipe' | 'disenchant'>('recipe');
-  const [recipeId, setRecipeId] = useState('');
   const [deItem, setDeItem] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const recipes = recipeRecords.map((r) => engine.recipes.get(r.id)!).sort((a, b) => a.name.localeCompare(b.name));
 
-  const add = async () => {
+  const addDisenchant = async () => {
     setErr(null);
-    if (mode === 'recipe') {
-      if (!recipeId) return;
-      onAdd({ type: 'recipe', recipeId });
-      setRecipeId('');
-    } else {
-      if (deItem === null) return;
+    if (deItem !== null) {
       if (!engine.items.has(deItem)) {
         try {
           await mutateAsync((repo) => importItem(repo, deItem));
@@ -590,14 +590,7 @@ function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
         onChange={setMode}
       />
       {mode === 'recipe' ? (
-        <select value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
-          <option value="">{recipes.length ? 'Choose a recipe...' : 'No recipes yet, import some first'}</option>
-          {recipes.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name} ({r.kind})
-            </option>
-          ))}
-        </select>
+        <RecipeSearch recipes={recipes} onPick={(r) => onAdd({ type: 'recipe', recipeId: r.id })} />
       ) : (
         <ItemPicker
           value={deItem}
@@ -606,9 +599,104 @@ function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
           placeholder="Item to disenchant"
         />
       )}
-      <button onClick={add}>Add step</button>
+      {mode === 'disenchant' && <button onClick={addDisenchant}>Add step</button>}
       {noRule && <span className="small warn">No disenchant rule matches this item yet.</span>}
       {err && <span className="small warn">{err}</span>}
+    </div>
+  );
+}
+
+/** Search box for recipes by recipe, reagent or product name. Picking a result adds it. */
+function RecipeSearch({ recipes, onPick }: { recipes: Recipe[]; onPick: (r: Recipe) => void }) {
+  const { engine } = useStore();
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
+  const matches = useMemo(() => searchRecipes(recipes, engine.items, query), [recipes, engine.items, query]);
+
+  const pick = (r: Recipe) => {
+    onPick(r);
+    setQuery('');
+    setActive(0);
+  };
+  const move = (d: number) => {
+    const next = Math.max(0, Math.min(matches.length - 1, active + d));
+    setActive(next);
+    listRef.current?.children[next]?.scrollIntoView({ block: 'nearest' });
+  };
+
+  return (
+    <div className="combo">
+      <input
+        className="combo-input"
+        value={query}
+        placeholder={recipes.length ? 'Search recipe, reagent or product...' : 'No recipes yet, import some first'}
+        disabled={!recipes.length}
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setActive(0);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!open) setOpen(true);
+            else move(1);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            move(-1);
+          } else if (e.key === 'Enter' && open && matches[active]) {
+            e.preventDefault();
+            pick(matches[active].recipe);
+          } else if (e.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
+      />
+      {open && (
+        <ul className="combo-list" role="listbox" ref={listRef}>
+          {matches.length === 0 && <li className="combo-empty muted small">No recipe matches.</li>}
+          {matches.map(({ recipe: r, matchedItems }, i) => (
+            <li
+              key={r.id}
+              role="option"
+              aria-selected={i === active}
+              className={i === active ? 'on' : ''}
+              onMouseEnter={() => setActive(i)}
+              // mousedown, not click: it fires before the input's blur closes the list.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(r);
+              }}
+            >
+              <span className="combo-name">
+                {r.name} <span className="muted small">({r.kind})</span>
+              </span>
+              <span className="combo-io small muted">
+                {r.inputs.map((x, k) => (
+                  <span key={k} className={matchedItems.includes(x.itemId) ? 'hit' : ''}>
+                    {k > 0 && ' + '}
+                    {x.qty} {engine.items.get(x.itemId)?.name ?? `#${x.itemId}`}
+                  </span>
+                ))}
+                {' → '}
+                {r.outputs.map((o, k) => (
+                  <span key={k} className={matchedItems.includes(o.itemId) ? 'hit' : ''}>
+                    {k > 0 && ', '}
+                    {engine.items.get(o.itemId)?.name ?? `#${o.itemId}`}
+                  </span>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
