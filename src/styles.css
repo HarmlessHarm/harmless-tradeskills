@@ -185,6 +185,22 @@ input.short {
   color: var(--text);
   border-bottom-color: var(--gold);
 }
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tab-group {
+  display: inline-flex;
+  align-self: center;
+  padding: 0 2px 0 4px;
+  color: var(--muted);
+  opacity: 0.7;
+  cursor: help;
+}
+.line-icon {
+  flex: none;
+}
 .tab-divider {
   align-self: center;
   width: 1px;
