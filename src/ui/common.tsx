@@ -114,7 +114,7 @@ export function ItemName({ id, link = false }: { id: number; link?: boolean }) {
   if (any) {
     return (
       <span className="item-name">
-        <span className="icon icon-empty" />
+        <ItemIcon item={any} />
         <span className={`q${any.quality}`}>{any.name}</span>
       </span>
     );
