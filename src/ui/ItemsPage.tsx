@@ -179,7 +179,7 @@ export function ItemsPage() {
                 <SortHeader label="Vendor sell" k="vendorSell" sort={sort} />
                 <th>Vendor buy</th>
                 <SortHeader label="AH price" k="ah" sort={sort} />
-                <th>Pessimistic</th>
+                <th>Min AH price</th>
                 <th>Price age</th>
                 <th>Source</th>
                 <th />
