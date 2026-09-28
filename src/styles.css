@@ -1138,10 +1138,59 @@ th.r .sort-btn {
   left: 0;
   max-width: calc(100vw - 110px);
 }
+/* Calculator and ledger on the left, prices on the right. */
+.row-detail {
+  grid-template-areas:
+    'calc prices'
+    'ledger prices';
+  align-items: start;
+}
+.row-detail .quick-calc {
+  grid-area: calc;
+}
+.row-detail .prices-card {
+  grid-area: prices;
+}
+.row-detail .ledger-card {
+  grid-area: ledger;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  min-width: 0;
+}
 @media (max-width: 900px) {
   .row-detail {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'calc'
+      'prices'
+      'ledger';
   }
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.card-head h4,
+.ledger-card h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.verdict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.verdict-row .verdict {
+  margin: 0;
 }
 .quick-calc,
 .prices-card {
@@ -1427,4 +1476,10 @@ th.r .sort-btn {
 }
 .obs-list td:first-child {
   white-space: nowrap;
+}
+@media (max-width: 600px) {
+  /* Four stat tiles do not fit a phone: two per row. */
+  .obs-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }

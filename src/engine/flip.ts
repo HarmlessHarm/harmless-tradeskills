@@ -38,20 +38,23 @@ export interface WatchItem {
   favorite: boolean;
   /** Names of workflows that buy or sell this item on the AH. */
   workflows: string[];
+  /** The ledger holds stock of it. */
+  held: boolean;
 }
 
 /**
- * Items on the watchlist: favorites, plus every item a workflow buys on the AH or sells there.
- * Stand-in "any item" IDs are left out: they are not real AH listings.
+ * Items on the watchlist: favorites, every item a workflow buys on the AH or sells there, and every
+ * item the ledger holds stock of. Stand-in "any item" IDs are left out: they are not real AH listings.
  */
-export function watchlistItems(data: EngineData, workflows: Workflow[], saved: FlipFavorite[]): WatchItem[] {
+export function watchlistItems(data: EngineData, workflows: Workflow[], saved: FlipFavorite[], held: Iterable<number> = []): WatchItem[] {
   const byId = new Map<number, WatchItem>();
   const get = (itemId: number) => {
     let w = byId.get(itemId);
-    if (!w) byId.set(itemId, (w = { itemId, favorite: false, workflows: [] }));
+    if (!w) byId.set(itemId, (w = { itemId, favorite: false, workflows: [], held: false }));
     return w;
   };
   for (const f of saved) if (isFavorite(f)) get(f.itemId).favorite = true;
+  for (const id of held) get(id).held = true;
   for (const wf of workflows) {
     const recipes = wf.steps.map((s) => resolveStep(data, s)).filter((r) => r !== null);
     const inputs = new Set(recipes.flatMap((r) => r.inputs.map((i) => i.itemId)));

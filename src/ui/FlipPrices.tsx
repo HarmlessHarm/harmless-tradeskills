@@ -168,7 +168,7 @@ export function PricesCard({ r }: { r: Row }) {
 // Chart ---------------------------------------------------------------------
 
 const HEIGHT = 96;
-const PAD = { top: 10, right: 78, bottom: 18, left: 46 };
+const PAD = { top: 10, right: 112, bottom: 18, left: 46 };
 
 /** Width of an element, kept up to date. */
 function useWidth<T extends HTMLElement>() {

@@ -1,17 +1,19 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { flip, listingMode } from '../engine/ah';
+import { type LedgerState, replay, type Transaction } from '../engine/ledger';
 import { rowSettings, watchlistItems, watchRow, type WatchItem, type WatchRow } from '../engine/flip';
 import { formatMoney } from '../engine/money';
 import { type PriceSnapshot, type PriceStats, priceStats } from '../engine/snapshots';
-import type { AhType, Config, FlipFavorite, Item } from '../engine/types';
+import type { AhType, Config, Copper, FlipFavorite, Item } from '../engine/types';
 import { useStore } from '../state/store';
+import { LedgerCard, manualTransaction } from './FlipLedger';
 import { PricesCard } from './FlipPrices';
 import { ago, ItemName, ItemPicker, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
 type Settings = ReturnType<typeof rowSettings>;
-type Filter = 'all' | 'favorites' | 'workflows';
-type SortKey = 'name' | 'last' | 'typical' | 'n' | 'buyBelow' | 'sellAt' | 'margin' | 'relists';
+type Filter = 'all' | 'favorites' | 'workflows' | 'holding';
+type SortKey = 'name' | 'last' | 'typical' | 'n' | 'buyBelow' | 'sellAt' | 'margin' | 'relists' | 'holding';
 
 /** Fewer snapshots than this and the typical price is a guess. */
 const THIN_DATA = 5;
@@ -29,6 +31,9 @@ export interface Row {
   settings: Settings;
   /** Snapshots for the row's AH type, oldest first. */
   snaps: PriceSnapshot[];
+  /** Ledger transactions for the item, oldest first. */
+  txs: Transaction[];
+  ledger: LedgerState;
   stats: PriceStats;
   row: WatchRow;
 }
@@ -38,7 +43,7 @@ export interface Row {
  * Clicking a row opens the quick calculator under it. Prices come from AH price snapshots (DEC-23).
  */
 export function FlipPage() {
-  const { config, engine, workflows, flipFavorites, priceSnapshots, mutate } = useStore();
+  const { config, engine, workflows, flipFavorites, priceSnapshots, transactions, mutate } = useStore();
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<number | null>(null);
@@ -56,26 +61,38 @@ export function FlipPage() {
     return m;
   }, [priceSnapshots]);
 
+  const ledgers = useMemo(() => {
+    const byItem = new Map<number, Transaction[]>();
+    for (const t of transactions) byItem.set(t.itemId, [...(byItem.get(t.itemId) ?? []), t]);
+    return new Map([...byItem].map(([id, txs]) => [id, { txs, ledger: replay(txs, config.ledgerCostMethod) }]));
+  }, [transactions, config.ledgerCostMethod]);
+  const held = useMemo(() => [...ledgers].filter(([, l]) => l.ledger.holdings > 0).map(([id]) => id), [ledgers]);
+
   const rows: Row[] = useMemo(
     () =>
-      watchlistItems(engine, workflows, flipFavorites).map((watch) => {
+      watchlistItems(engine, workflows, flipFavorites, held).map((watch) => {
         const item = engine.items.get(watch.itemId);
         const settings = rowSettings(config, watch.itemId, flipFavorites.find((f) => f.itemId === watch.itemId));
         const snaps = (snapsByItem.get(watch.itemId) ?? []).filter((s) => s.ahType === settings.ahType);
         const stats = priceStats(snaps);
-        return { watch, item, name: item?.name ?? `#${watch.itemId}`, settings, snaps, stats, row: watchRow(config, item, settings, stats, margin) };
+        const { txs, ledger } = ledgers.get(watch.itemId) ?? { txs: [], ledger: replay([], config.ledgerCostMethod) };
+        return { watch, item, name: item?.name ?? `#${watch.itemId}`, settings, snaps, txs, ledger, stats, row: watchRow(config, item, settings, stats, margin) };
       }),
-    [engine, workflows, flipFavorites, snapsByItem, config, margin],
+    [engine, workflows, flipFavorites, held, ledgers, snapsByItem, config, margin],
   );
 
   const terms = search.toLowerCase().split(/\s+/).filter(Boolean);
   const shown = sortRows(
     rows
-      .filter((r) => filter === 'all' || (filter === 'favorites' ? r.watch.favorite : r.watch.workflows.length > 0))
+      .filter(
+        (r) =>
+          filter === 'all' ||
+          (filter === 'favorites' ? r.watch.favorite : filter === 'holding' ? r.ledger.holdings > 0 : r.watch.workflows.length > 0),
+      )
       .filter((r) => terms.every((t) => r.name.toLowerCase().includes(t))),
     sort,
     (r, k): SortValue =>
-      ({ name: r.name, last: r.row.lastLow, typical: r.row.typical, n: r.row.n, buyBelow: r.row.buyBelow, sellAt: r.row.sellAt, margin: r.row.marginPct, relists: r.row.relists })[k],
+      ({ name: r.name, last: r.row.lastLow, typical: r.row.typical, n: r.row.n, buyBelow: r.row.buyBelow, sellAt: r.row.sellAt, margin: r.row.marginPct, relists: r.row.relists, holding: r.ledger.holdings || null })[k],
     (r) => r.name,
   );
 
@@ -109,7 +126,7 @@ export function FlipPage() {
       return setPhase(id, null);
     }
     // A favorite no workflow uses leaves the list, so its settings go too: after a pause and a fade.
-    if (r.watch.favorite && r.watch.workflows.length === 0) {
+    if (r.watch.favorite && r.watch.workflows.length === 0 && !r.watch.held) {
       setPhase(id, 'wait');
       timers.current.set(id, [
         setTimeout(() => setPhase(id, 'fade'), LEAVE_DELAY_MS),
@@ -154,6 +171,7 @@ export function FlipPage() {
                 { value: 'all', label: 'All' },
                 { value: 'favorites', label: 'Favorites' },
                 { value: 'workflows', label: 'In workflows' },
+                { value: 'holding', label: 'Holding' },
               ]}
               onChange={setFilter}
             />
@@ -193,6 +211,7 @@ export function FlipPage() {
                   <SortHeader label="Sell at" k="sellAt" sort={sort} className="r" />
                   <SortHeader label="Margin" k="margin" sort={sort} className="r" />
                   <SortHeader label="Relists to break even" k="relists" sort={sort} className="r" />
+                  <SortHeader label="Holding" k="holding" sort={sort} className="r" />
                 </tr>
               </thead>
               <tbody>
@@ -268,13 +287,32 @@ export function FlipPage() {
                         <td className="r">
                           <Relists value={r.row.relists} known={r.row.margin !== null} />
                         </td>
+                        <td className="r">
+                          {r.ledger.holdings > 0 ? (
+                            <>
+                              {r.ledger.holdings}
+                              <span className="sub">
+                                @ <Money value={r.ledger.avgCost} />
+                              </span>
+                            </>
+                          ) : (
+                            <span className="money muted">-</span>
+                          )}
+                        </td>
                       </tr>
                       {isOpen && (
                         <tr className={`editor-row ${leaveCls}`}>
-                          <td colSpan={9}>
+                          <td colSpan={10}>
                             <div className="row-detail">
-                              <QuickCalc r={r} config={config} targetMargin={margin} onChange={(patch) => save(r.watch.itemId, patch)} />
+                              <QuickCalc
+                                r={r}
+                                config={config}
+                                targetMargin={margin}
+                                onChange={(patch) => save(r.watch.itemId, patch)}
+                                onLogBuy={(qty, price) => mutate((repo) => repo.addTransaction(manualTransaction(config, r, 'buy', qty, price)))}
+                              />
                               <PricesCard r={r} />
+                              <LedgerCard r={r} config={config} />
                             </div>
                           </td>
                         </tr>
@@ -310,7 +348,20 @@ function Relists({ value, known }: { value: number | null; known: boolean }) {
 }
 
 /** The calculator under an expanded row. Every input is remembered for the item. */
-function QuickCalc({ r, config, targetMargin, onChange }: { r: Row; config: Config; targetMargin: number; onChange: (patch: Partial<FlipFavorite>) => void }) {
+function QuickCalc({
+  r,
+  config,
+  targetMargin,
+  onChange,
+  onLogBuy,
+}: {
+  r: Row;
+  config: Config;
+  targetMargin: number;
+  onChange: (patch: Partial<FlipFavorite>) => void;
+  onLogBuy: (qty: number, price: Copper) => void;
+}) {
+  const [logged, setLogged] = useState(false);
   const { settings, row, item } = r;
   const mode = listingMode(config, item?.itemClass);
   const buy = settings.buyPrice ?? row.lastLow;
@@ -365,7 +416,19 @@ function QuickCalc({ r, config, targetMargin, onChange }: { r: Row; config: Conf
 
       {res && buy !== null ? (
         <>
-          <Verdict buy={buy} buyBelow={row.buyBelow} />
+          <div className="verdict-row">
+            <Verdict buy={buy} buyBelow={row.buyBelow} />
+            <button
+              onClick={() => {
+                onLogBuy(settings.qty, buy);
+                setLogged(true);
+                setTimeout(() => setLogged(false), 2000);
+              }}
+              title="Add this buy to the ledger"
+            >
+              {logged ? 'Logged' : `Log buy: ${settings.qty} @ ${formatMoney(buy)}`}
+            </button>
+          </div>
           <dl className="calc-kv">
             <dt>Profit per item if it sells first time</dt>
             <dd>

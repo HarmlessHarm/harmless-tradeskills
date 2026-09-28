@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
 import { freshRepo } from '../test/db';
 import { deShuffle } from '../test/fixtures';
+import type { Transaction } from '../engine/ledger';
 import type { PriceSnapshot } from '../engine/snapshots';
 import { DE_SEED_NOTE } from './deSeed';
 import { dbKind, migrate, Repo, splitLegacy } from './repo';
@@ -133,6 +134,38 @@ describe('repo', () => {
   });
 });
 
+describe('flip ledger', () => {
+  const tx = (uid: string, itemId: number, occurredAt: number): Transaction => ({
+    uid,
+    itemId,
+    kind: 'buy',
+    qty: 10,
+    unitPrice: 500,
+    fee: 0,
+    ahType: 'faction',
+    occurredAt,
+    source: 'manual',
+    note: '',
+  });
+
+  it('round trips transactions in the personal database, oldest first, once per uid', async () => {
+    const changed: string[] = [];
+    const repo = await freshRepo((kind) => changed.push(kind));
+    expect(repo.addTransaction(tx('b', 2589, 20))).toBe(true);
+    expect(repo.addTransaction({ ...tx('a', 2589, 10), kind: 'sell', qty: 4, unitPrice: 800, fee: 160, ahType: 'neutral', note: 'hi' })).toBe(true);
+    expect(repo.addTransaction(tx('b', 2589, 20))).toBe(false);
+    repo.addTransaction(tx('c', 4306, 30));
+    expect(changed).toEqual(['user', 'user', 'user']);
+    expect(repo.listTransactions(2589)).toEqual([
+      { ...tx('a', 2589, 10), id: 2, kind: 'sell', qty: 4, unitPrice: 800, fee: 160, ahType: 'neutral', note: 'hi' },
+      { ...tx('b', 2589, 20), id: 1 },
+    ]);
+    expect(repo.listTransactions()).toHaveLength(3);
+    repo.deleteTransaction(1);
+    expect(repo.listTransactions().map((t) => t.uid)).toEqual(['a', 'c']);
+  });
+});
+
 describe('price snapshots', () => {
   const snap = (uid: string, itemId: number, observedAt: number): PriceSnapshot => ({
     uid,
@@ -190,7 +223,7 @@ describe('split databases', () => {
     const repo = await freshRepo();
     const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();
     expect(tables(repo.data)).toEqual(['de_rules', 'items', 'recipes']);
-    expect(tables(repo.user)).toEqual(['price_observations', 'settings', 'workflows']);
+    expect(tables(repo.user)).toEqual(['flip_transactions', 'price_observations', 'settings', 'workflows']);
     expect(tables(repo.prices)).toEqual(['price_snapshots']);
     expect(dbKind(repo.data)).toBe('data');
     expect(dbKind(repo.user)).toBe('user');

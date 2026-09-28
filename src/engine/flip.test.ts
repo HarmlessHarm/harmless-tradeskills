@@ -48,8 +48,8 @@ describe('watchlist items', () => {
     // The DE shuffle buys linen on the AH (no vendor price); everything else is vendor or made in the chain.
     const list = watchlistItems(data, [deShuffle], [{ itemId: IDS.wand, buyPrice: null, sellPrice: null, durationKey: '8h', ahType: 'faction' }]);
     expect(list).toEqual([
-      { itemId: IDS.wand, favorite: true, workflows: [] },
-      { itemId: IDS.linen, favorite: false, workflows: ['DE shuffle'] },
+      { itemId: IDS.wand, favorite: true, workflows: [], held: false },
+      { itemId: IDS.linen, favorite: false, workflows: ['DE shuffle'], held: false },
     ]);
   });
 
@@ -60,9 +60,14 @@ describe('watchlist items', () => {
     expect(list.find((w) => w.itemId === IDS.oil)?.workflows).toEqual(['Oil for AH']);
   });
 
+  it('lists items the ledger holds, even when nothing else puts them there', () => {
+    expect(watchlistItems(data, [], [], [IDS.oil])).toEqual([{ itemId: IDS.oil, favorite: false, workflows: [], held: true }]);
+    expect(watchlistItems(data, [deShuffle], [], [IDS.linen])).toEqual([{ itemId: IDS.linen, favorite: false, workflows: ['DE shuffle'], held: true }]);
+  });
+
   it('keeps remembered settings of workflow items without making them favorites', () => {
     const saved = [{ itemId: IDS.linen, buyPrice: 12, sellPrice: null, durationKey: '8h', ahType: 'faction' as const, favorite: false }];
-    expect(watchlistItems(data, [deShuffle], saved)).toEqual([{ itemId: IDS.linen, favorite: false, workflows: ['DE shuffle'] }]);
+    expect(watchlistItems(data, [deShuffle], saved)).toEqual([{ itemId: IDS.linen, favorite: false, workflows: ['DE shuffle'], held: false }]);
     // A remembered non-favorite that no workflow uses any more drops off.
     expect(watchlistItems(data, [], saved)).toEqual([]);
   });

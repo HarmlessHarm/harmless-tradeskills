@@ -9,6 +9,7 @@ import type {
   RecipeRecord,
   Workflow,
 } from '../engine/types';
+import type { Transaction, TransactionKind, TransactionSource } from '../engine/ledger';
 import { type PriceLevel, type PriceSnapshot, type SnapshotSource, summarize } from '../engine/snapshots';
 import {
   APPLICATION_ID,
@@ -351,6 +352,45 @@ export class Repo {
 
   deleteSnapshot(id: number): void {
     this.run('prices', 'DELETE FROM price_snapshots WHERE id = ?', [id]);
+  }
+
+  // Flip ledger (user database, DEC-26) ---------------------------------------
+
+  /** Stores a transaction. One whose uid is already stored is skipped; returns whether it was added. */
+  addTransaction(tx: Transaction): boolean {
+    this.user.run(
+      `INSERT OR IGNORE INTO flip_transactions (uid, item_id, kind, qty, unit_price, fee, ah_type, occurred_at, source, note)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [tx.uid, tx.itemId, tx.kind, tx.qty, tx.unitPrice, tx.fee, tx.ahType, tx.occurredAt, tx.source, tx.note],
+    );
+    const added = this.user.getRowsModified() > 0;
+    if (added) this.onChange('user');
+    return added;
+  }
+
+  /** Transactions, oldest first. Optionally for one item. */
+  listTransactions(itemId?: number): Transaction[] {
+    const rows =
+      itemId === undefined
+        ? this.all('user', 'SELECT * FROM flip_transactions ORDER BY occurred_at, id')
+        : this.all('user', 'SELECT * FROM flip_transactions WHERE item_id = ? ORDER BY occurred_at, id', [itemId]);
+    return rows.map((r) => ({
+      id: Number(r.id),
+      uid: String(r.uid),
+      itemId: Number(r.item_id),
+      kind: String(r.kind) as TransactionKind,
+      qty: Number(r.qty),
+      unitPrice: num(r.unit_price),
+      fee: Number(r.fee),
+      ahType: r.ah_type === 'neutral' ? 'neutral' : 'faction',
+      occurredAt: Number(r.occurred_at),
+      source: String(r.source) as TransactionSource,
+      note: String(r.note ?? ''),
+    }));
+  }
+
+  deleteTransaction(id: number): void {
+    this.run('user', 'DELETE FROM flip_transactions WHERE id = ?', [id]);
   }
 
   // Workflows ---------------------------------------------------------------

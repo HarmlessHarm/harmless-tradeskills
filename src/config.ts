@@ -18,6 +18,7 @@ export const DEFAULT_CONFIG: Config = {
   listingMode: { armor: 'perItem', weapon: 'perItem', other: 'lot' },
   ahRulesVerifiedAt: null,
   flipTargetMargin: 0.15,
+  ledgerCostMethod: 'average',
   perActionOverheadSec: 1,
   perBatchOverheadSec: 120,
   defaultBatchSize: 20,

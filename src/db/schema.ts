@@ -6,7 +6,7 @@
  * Data is split over three database files so game data and prices can be shared without personal
  * data (DEC-21, DEC-23):
  * - data: items, recipes and disenchant rules. Shareable with other players.
- * - user: workflows, flip favorites, price observations and settings.
+ * - user: workflows, flip favorites, the flip ledger, price observations and settings.
  * - prices: AH price snapshots. Shareable with other players on the same realm.
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
@@ -84,6 +84,21 @@ export const USER_MIGRATIONS: string[] = [
   // Pessimistic price renamed to min AH price. Old values are dropped, not carried over.
   `ALTER TABLE price_observations DROP COLUMN ah_pessimistic;
   ALTER TABLE price_observations ADD COLUMN ah_min INTEGER;`,
+  // Flip ledger (DEC-26). uid lets addon imports skip transactions logged by hand.
+  `CREATE TABLE flip_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL UNIQUE,
+    item_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    unit_price INTEGER,
+    fee INTEGER NOT NULL DEFAULT 0,
+    ah_type TEXT NOT NULL DEFAULT 'faction',
+    occurred_at INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX flip_tx_item ON flip_transactions (item_id, occurred_at);`,
 ];
 
 /**

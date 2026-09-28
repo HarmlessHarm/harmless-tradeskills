@@ -167,6 +167,8 @@ export interface Config {
   ahRulesVerifiedAt: number | null;
   /** Profit wanted on a flip, as a fraction of the buy price. Sets the watchlist's "buy below". */
   flipTargetMargin: number;
+  /** How the flip ledger values stock and sales (DEC-26). */
+  ledgerCostMethod: 'average' | 'fifo';
   /** Seconds of idle time added to every action (cast). */
   perActionOverheadSec: number;
   /** Seconds added once per batch (vendor walks, buying, posting). */

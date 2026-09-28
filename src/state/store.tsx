@@ -4,6 +4,7 @@ import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } fr
 import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
+import type { Transaction } from '../engine/ledger';
 import type { PriceSnapshot } from '../engine/snapshots';
 import type { EngineData } from '../engine/workflow';
 
@@ -17,6 +18,8 @@ export interface Snapshot {
   flipFavorites: FlipFavorite[];
   /** AH price snapshots from the prices database (DEC-23), oldest first. */
   priceSnapshots: PriceSnapshot[];
+  /** Flip ledger, oldest first (DEC-26). */
+  transactions: Transaction[];
 }
 
 interface StoreValue extends Snapshot {
@@ -45,6 +48,7 @@ function readSnapshot(repo: Repo): Snapshot {
     config: repo.getConfig(),
     flipFavorites: repo.listFlipFavorites(),
     priceSnapshots: repo.listSnapshots(),
+    transactions: repo.listTransactions(),
   };
 }
 
