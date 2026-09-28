@@ -862,3 +862,21 @@ th.r .sort-btn {
 .table .check {
   user-select: none;
 }
+
+/* Workflow buy list, split by where you buy */
+.buy-section + .buy-section {
+  margin-top: 14px;
+}
+.buy-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 0;
+}
+.buy-section-head .money {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.nowrap {
+  white-space: nowrap;
+}

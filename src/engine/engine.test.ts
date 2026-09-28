@@ -132,6 +132,7 @@ describe('workflow: DE shuffle', () => {
     expect(sim.mean).toBeGreaterThan(a.batchProfit - 0.15 * 20 * 1100);
     expect(sim.leftovers.some((l) => l.itemId === IDS.lme)).toBe(true);
     expect(sim.worstCase).toBe(sim.p5); // no pessimistic prices set
+    expect(sim.deterministic).toBe(false);
   });
 
   it('is deterministic for a seed', () => {
@@ -157,6 +158,14 @@ describe('workflow: DE shuffle', () => {
     expect(r.steps[1].runsPerUnit).toBeCloseTo(0.5);
   });
 
+  it('accepts a bought base item as the unit', () => {
+    const r = analyzeWorkflow(data, { ...deShuffle, unitItemId: IDS.linen });
+    expect(r.errors).toEqual([]);
+    expect(r.steps[0].runsPerUnit).toBeCloseTo(0.5);
+    expect(r.steps[1].runsPerUnit).toBeCloseTo(0.25);
+    expect(r.externalInputs.find((x) => x.itemId === IDS.linen)!.qtyPerUnit).toBeCloseTo(1);
+  });
+
   it('reports missing prices', () => {
     const d = engineData({ prices: new Map() });
     const r = analyzeWorkflow(d, deShuffle);
@@ -175,5 +184,19 @@ describe('workflow: DE shuffle', () => {
   it('reports a missing disenchant rule', () => {
     const r = analyzeWorkflow(engineData({ deRules: [] }), deShuffle);
     expect(r.errors[0]).toMatch(/no disenchant rule/);
+  });
+});
+
+describe('workflow: no chance-based outputs', () => {
+  const data = engineData();
+  const wf = { ...deShuffle, steps: deShuffle.steps.slice(0, 2), unitItemId: IDS.gloves };
+  const a = analyzeWorkflow(data, wf);
+
+  it('replaces the simulation with one exact batch', () => {
+    const sim = a.simulation!;
+    expect(sim.deterministic).toBe(true);
+    expect(sim.runs).toBe(1);
+    expect(sim.p5).toBe(sim.p95);
+    expect(sim.p50).toBeCloseTo(a.batchProfit);
   });
 });

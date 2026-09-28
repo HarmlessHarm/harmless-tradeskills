@@ -54,6 +54,8 @@ export interface MissingPrice {
 
 export interface SimulationResult {
   batchSize: number;
+  /** No step has chance-based or ranged outputs, so one exact pass replaces the Monte Carlo. */
+  deterministic: boolean;
   runs: number;
   p5: Copper;
   p50: Copper;
@@ -144,8 +146,18 @@ const producedBy = (r: Recipe, itemId: number) =>
 const consumedBy = (r: Recipe, itemId: number) =>
   r.inputs.filter((i) => i.itemId === itemId).reduce((sum, i) => sum + i.qty, 0);
 
+/** True when an output can vary between runs: a chance below 1, a quantity range, or a pick among several. */
+export function hasChanceOutputs(recipes: Recipe[]): boolean {
+  return recipes.some(
+    (r) =>
+      (r.outputMode === 'exclusive' && r.outputs.length > 1) ||
+      r.outputs.some((o) => o.chance < 1 || o.minQty !== o.maxQty),
+  );
+}
+
 /**
- * Solve runs per unit (REQ-6.3). One equation fixes production of the unit item at 1; every
+ * Solve runs per unit (REQ-6.3). One equation fixes the unit item at 1: its production, or, when
+ * no step makes it (a bought base item such as cloth), its consumption. Every
  * intermediate item is balanced: what earlier steps make is what later steps use.
  */
 function solveRuns(
@@ -157,8 +169,9 @@ function solveRuns(
   const rows: number[][] = [];
   const rhs: number[] = [];
 
-  const unitRow = recipes.map((r) => producedBy(r, unitItemId));
-  if (unitRow.every((x) => Math.abs(x) < EPS)) return { error: 'No step produces the unit item.' };
+  let unitRow = recipes.map((r) => producedBy(r, unitItemId));
+  if (unitRow.every((x) => Math.abs(x) < EPS)) unitRow = recipes.map((r) => consumedBy(r, unitItemId));
+  if (unitRow.every((x) => Math.abs(x) < EPS)) return { error: 'No step makes or uses the unit item.' };
   rows.push(unitRow);
   rhs.push(1);
 
@@ -385,7 +398,8 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
 }
 
 /**
- * Monte Carlo of a batch of N units with whole runs and whole items (REQ-6.5, DEC-10).
+ * Monte Carlo of a batch of N units with whole runs and whole items (REQ-6.5, DEC-10). Without
+ * chance-based outputs every pass is identical, so a single exact pass is run instead.
  * Steps that only use bought inputs run round(runsPerUnit * N) times. Steps fed by earlier
  * steps use as much of the linked inventory as they can. Unused intermediates are leftovers.
  */
@@ -399,7 +413,8 @@ function simulateBatch(
   seed: number,
 ): SimulationResult {
   const N = analysis.batchSize;
-  const iterations = Math.max(100, data.config.simulationRuns);
+  const deterministic = !hasChanceOutputs(recipes);
+  const iterations = deterministic ? 1 : Math.max(100, data.config.simulationRuns);
   const rng = mulberry32(seed);
 
   const buyCost = new Map<number, number>();
@@ -471,6 +486,7 @@ function simulateBatch(
   worst.sort((a, b) => a - b);
   return {
     batchSize: N,
+    deterministic,
     runs: iterations,
     p5: percentile(profits, 5),
     p50: percentile(profits, 50),

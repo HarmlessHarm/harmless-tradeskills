@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { findDisenchantRule } from '../engine/disenchant';
 import type { Workflow, WorkflowStep } from '../engine/types';
-import { analyzeWorkflow, buySourceFor, describeStep, dispositionFor, resolveStep, type WorkflowAnalysis } from '../engine/workflow';
+import { analyzeWorkflow, describeStep, dispositionFor, resolveStep, type ExternalInput, type WorkflowAnalysis } from '../engine/workflow';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, NumberInput, Panel, Segmented } from './common';
@@ -148,7 +148,10 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
   const save = (patch: Partial<Workflow>) => mutate((repo) => repo.saveWorkflow({ ...wf, ...patch, updatedAt: Date.now() }));
 
   const resolved = wf.steps.map((s) => resolveStep(engine, s));
-  const unitOptions = [...new Set(resolved.flatMap((r) => r?.outputs.map((o) => o.itemId) ?? []))];
+  const madeIds = new Set(resolved.flatMap((r) => r?.outputs.map((o) => o.itemId) ?? []));
+  const baseIds = new Set(resolved.flatMap((r) => r?.inputs.map((i) => i.itemId) ?? []).filter((id) => !madeIds.has(id)));
+  const itemLabel = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
+  const byName = (a: number, b: number) => itemLabel(a).localeCompare(itemLabel(b));
 
   const moveStep = (i: number, d: -1 | 1) => {
     const steps = [...wf.steps];
@@ -183,11 +186,22 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
                 Default
                 {analysis.unitItemId && !wf.unitItemId ? ` (${engine.items.get(analysis.unitItemId)?.name ?? `#${analysis.unitItemId}`})` : ''}
               </option>
-              {unitOptions.map((id) => (
-                <option key={id} value={id}>
-                  {engine.items.get(id)?.name ?? `#${id}`}
-                </option>
-              ))}
+              <optgroup label="Made">
+                {[...madeIds].sort(byName).map((id) => (
+                  <option key={id} value={id}>
+                    {itemLabel(id)}
+                  </option>
+                ))}
+              </optgroup>
+              {baseIds.size > 0 && (
+                <optgroup label="Base materials">
+                  {[...baseIds].sort(byName).map((id) => (
+                    <option key={id} value={id}>
+                      {itemLabel(id)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <label>
@@ -264,50 +278,15 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
       {analysis.ok && (
         <div className="grid2">
           <Panel title="Buy (per unit)">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th className="r">Qty</th>
-                  <th>From</th>
-                  <th>Price</th>
-                  <th className="r">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.externalInputs.map((x) => (
-                  <tr key={x.itemId}>
-                    <td>
-                      <ItemName id={x.itemId} />
-                    </td>
-                    <td className="r">{round3(x.qtyPerUnit)}</td>
-                    <td>
-                      <Segmented
-                        value={buySourceFor(engine, wf, x.itemId)}
-                        options={[
-                          { value: 'ah', label: 'AH' },
-                          { value: 'vendor', label: 'Vendor' },
-                        ]}
-                        onChange={(v) => save({ buyMap: { ...wf.buyMap, [x.itemId]: v } })}
-                      />
-                    </td>
-                    <td>
-                      {x.source === 'ah' ? (
-                        <div className="price-cell">
-                          <AhPriceCell itemId={x.itemId} />
-                          <AhPriceAge itemId={x.itemId} />
-                        </div>
-                      ) : (
-                        <VendorBuyCell itemId={x.itemId} />
-                      )}
-                    </td>
-                    <td className="r">
-                      <Money value={x.costPerUnit} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {(['ah', 'vendor'] as const).map((source) => (
+              <BuySection
+                key={source}
+                source={source}
+                inputs={analysis.externalInputs.filter((x) => x.source === source)}
+                batchSize={analysis.batchSize}
+                onMove={(itemId) => save({ buyMap: { ...wf.buyMap, [itemId]: source === 'ah' ? 'vendor' : 'ah' } })}
+              />
+            ))}
           </Panel>
           <Panel title="Sell (per unit)">
             <table className="table">
@@ -371,6 +350,75 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
   );
 }
 
+function BuySection({
+  source,
+  inputs,
+  batchSize,
+  onMove,
+}: {
+  source: 'ah' | 'vendor';
+  inputs: ExternalInput[];
+  batchSize: number;
+  onMove: (itemId: number) => void;
+}) {
+  const total = inputs.reduce((sum, x) => sum + x.costPerUnit, 0);
+  return (
+    <section className="buy-section">
+      <h3 className="buy-section-head">
+        <span>{source === 'ah' ? 'Auction House' : 'Vendor'}</span>
+        <Money value={total} />
+      </h3>
+      {inputs.length === 0 ? (
+        <p className="small muted">Nothing to buy here.</p>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th className="r">Qty</th>
+              <th className="r" title="Quantity for the whole batch, rounded up">
+                Batch
+              </th>
+              <th>Price</th>
+              <th className="r">Cost</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {inputs.map((x) => (
+              <tr key={x.itemId}>
+                <td>
+                  <ItemName id={x.itemId} />
+                </td>
+                <td className="r">{round3(x.qtyPerUnit)}</td>
+                <td className="r">{fmtQty(Math.ceil(x.qtyPerUnit * batchSize - 1e-6))}</td>
+                <td>
+                  {source === 'ah' ? (
+                    <div className="price-cell">
+                      <AhPriceCell itemId={x.itemId} />
+                      <AhPriceAge itemId={x.itemId} />
+                    </div>
+                  ) : (
+                    <VendorBuyCell itemId={x.itemId} />
+                  )}
+                </td>
+                <td className="r">
+                  <Money value={x.costPerUnit} />
+                </td>
+                <td className="r">
+                  <button className="icon-btn nowrap" onClick={() => onMove(x.itemId)} title={`Buy from ${source === 'ah' ? 'a vendor' : 'the AH'} instead`}>
+                    {source === 'ah' ? 'To vendor' : 'To AH'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   if (!a.ok) {
     return (
@@ -385,21 +433,44 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   return (
     <Panel className="results">
       <div className="kpis">
-        <div className="kpi kpi-worst">
-          <span className="kpi-label">Worst case, batch of {a.batchSize}</span>
-          <span className="kpi-value">
-            <Money value={sim?.worstCase ?? null} signed />
-          </span>
-          <span className="kpi-sub">95% of batches do at least this well</span>
-        </div>
-        <div className="kpi">
-          <span className="kpi-label">Batch P5 / median / P95</span>
-          <span className="kpi-value range">
-            <Money value={sim?.p5} signed /> <span className="muted">/</span> <Money value={sim?.p50} signed /> <span className="muted">/</span>{' '}
-            <Money value={sim?.p95} signed />
-          </span>
-          <span className="kpi-sub">{sim ? `${sim.runs.toLocaleString()} simulated batches` : ''}</span>
-        </div>
+        {sim?.deterministic ? (
+          <>
+            <div className="kpi kpi-worst">
+              <span className="kpi-label">Batch profit, batch of {a.batchSize}</span>
+              <span className="kpi-value">
+                <Money value={sim.p50} signed />
+              </span>
+              <span className="kpi-sub">no chance-based outputs, so no simulation needed</span>
+            </div>
+            {sim.worstCase !== sim.p50 && (
+              <div className="kpi">
+                <span className="kpi-label">With pessimistic AH prices</span>
+                <span className="kpi-value">
+                  <Money value={sim.worstCase} signed />
+                </span>
+                <span className="kpi-sub">same batch, pessimistic sell prices</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="kpi kpi-worst">
+              <span className="kpi-label">Worst case, batch of {a.batchSize}</span>
+              <span className="kpi-value">
+                <Money value={sim?.worstCase ?? null} signed />
+              </span>
+              <span className="kpi-sub">95% of batches do at least this well</span>
+            </div>
+            <div className="kpi">
+              <span className="kpi-label">Batch P5 / median / P95</span>
+              <span className="kpi-value range">
+                <Money value={sim?.p5} signed /> <span className="muted">/</span> <Money value={sim?.p50} signed /> <span className="muted">/</span>{' '}
+                <Money value={sim?.p95} signed />
+              </span>
+              <span className="kpi-sub">{sim ? `${sim.runs.toLocaleString()} simulated batches` : ''}</span>
+            </div>
+          </>
+        )}
         <div className="kpi">
           <span className="kpi-label">Gold per hour</span>
           <span className="kpi-value">
@@ -431,7 +502,7 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
         )}
         {sim && sim.leftovers.length > 0 && (
           <p>
-            Typical leftovers per batch:{' '}
+            {sim.deterministic ? 'Leftovers per batch:' : 'Typical leftovers per batch:'}{' '}
             {sim.leftovers.map((l, i) => (
               <span key={l.itemId}>
                 {i > 0 && ', '}
