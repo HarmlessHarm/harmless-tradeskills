@@ -1043,6 +1043,51 @@ th.r .sort-btn {
 .row-icon.fav {
   color: var(--gold);
   font-size: 16px;
+  transition:
+    transform 0.12s ease-out,
+    color 0.12s ease-out;
+}
+/* One glyph at a time: outline when off, filled when on. Hovering an empty star previews it filled. */
+.row-icon.fav .star-on,
+.row-icon.fav.on .star-off {
+  display: none;
+}
+.row-icon.fav.on .star-on {
+  display: inline;
+}
+.row-icon.fav:not(.on):hover .star-off {
+  display: none;
+}
+.row-icon.fav:not(.on):hover .star-on {
+  display: inline;
+  opacity: 0.75;
+}
+.row-icon.fav:hover {
+  transform: scale(1.18);
+  color: #ffd36b;
+}
+/* An unstarred favorite waits, then fades out before it leaves the list (LEAVE_DELAY_MS, LEAVE_FADE_MS). */
+.watchlist tr.leaving > td {
+  transition: opacity 2s ease-in;
+}
+.watchlist tr.fading > td {
+  opacity: 0;
+}
+.leaving-note {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--warn);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-icon.fav {
+    transition: none;
+  }
+  .row-icon.fav:hover {
+    transform: none;
+  }
+  .watchlist tr.leaving > td {
+    transition: none;
+  }
 }
 .badge.wf {
   color: #b9a4ff;

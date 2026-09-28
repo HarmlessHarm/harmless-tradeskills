@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { flip, listingMode } from '../engine/ah';
 import { rowSettings, watchlistItems, watchRow, type WatchItem, type WatchRow } from '../engine/flip';
 import { formatMoney } from '../engine/money';
@@ -15,6 +15,12 @@ type SortKey = 'name' | 'last' | 'typical' | 'n' | 'buyBelow' | 'sellAt' | 'marg
 
 /** Fewer snapshots than this and the typical price is a guess. */
 const THIN_DATA = 5;
+/** An unstarred favorite stays this long before it fades, so a misclick can be undone. */
+const LEAVE_DELAY_MS = 3000;
+/** Then it fades out over this long and is removed. Keep in sync with the CSS transition. */
+const LEAVE_FADE_MS = 2000;
+
+type LeavePhase = 'wait' | 'fade';
 
 export interface Row {
   watch: WatchItem;
@@ -37,6 +43,10 @@ export function FlipPage() {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<number | null>(null);
   const [adding, setAdding] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState<Map<number, LeavePhase>>(new Map());
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>[]>());
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const sort = useSort<SortKey>('name');
   const margin = config.flipTargetMargin;
 
@@ -77,14 +87,53 @@ export function FlipPage() {
     const { favorite: _, ...defaults } = rowSettings(config, itemId, undefined);
     saveAll([...flipFavorites, { ...defaults, favorite: false, ...patch }]);
   };
-  const toggleFavorite = (r: Row) => {
-    // A favorite no workflow uses leaves the list, so its settings go too.
-    if (r.watch.favorite && r.watch.workflows.length === 0) {
-      if (open === r.watch.itemId) setOpen(null);
-      return saveAll(flipFavorites.filter((f) => f.itemId !== r.watch.itemId));
-    }
-    save(r.watch.itemId, { favorite: !r.watch.favorite });
+  const setPhase = (itemId: number, phase: LeavePhase | null) =>
+    setLeaving((m) => {
+      const next = new Map(m);
+      if (phase) next.set(itemId, phase);
+      else next.delete(itemId);
+      return next;
+    });
+  const clearTimers = (itemId: number) => {
+    timers.current.get(itemId)?.forEach(clearTimeout);
+    timers.current.delete(itemId);
   };
+  /** Drops an item's flip settings, and with them the row. Reads the stored list, not a stale copy. */
+  const removeNow = (itemId: number) =>
+    mutateRef.current((repo) => repo.saveFlipFavorites(repo.listFlipFavorites().filter((f) => f.itemId !== itemId)));
+  const toggleFavorite = (r: Row) => {
+    const id = r.watch.itemId;
+    // Clicking the star again while the row is on its way out keeps it.
+    if (leaving.has(id)) {
+      clearTimers(id);
+      return setPhase(id, null);
+    }
+    // A favorite no workflow uses leaves the list, so its settings go too: after a pause and a fade.
+    if (r.watch.favorite && r.watch.workflows.length === 0) {
+      setPhase(id, 'wait');
+      timers.current.set(id, [
+        setTimeout(() => setPhase(id, 'fade'), LEAVE_DELAY_MS),
+        setTimeout(() => {
+          timers.current.delete(id);
+          setPhase(id, null);
+          setOpen((o) => (o === id ? null : o));
+          removeNow(id);
+        }, LEAVE_DELAY_MS + LEAVE_FADE_MS),
+      ]);
+      return;
+    }
+    save(id, { favorite: !r.watch.favorite });
+  };
+  // Leaving the page finishes removals that were under way: the unstar was meant.
+  useEffect(
+    () => () => {
+      for (const id of [...timers.current.keys()]) {
+        clearTimers(id);
+        removeNow(id);
+      }
+    },
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const add = (itemId: number | null) => {
     setAdding(null);
     if (itemId === null) return;
@@ -149,21 +198,33 @@ export function FlipPage() {
               <tbody>
                 {shown.map((r) => {
                   const isOpen = open === r.watch.itemId;
+                  const phase = leaving.get(r.watch.itemId);
+                  const starred = r.watch.favorite && !phase;
+                  const leaveCls = phase ? `leaving ${phase === 'fade' ? 'fading' : ''}` : '';
                   return (
                     <Fragment key={r.watch.itemId}>
-                      <tr className={`watch-row ${isOpen ? 'editing' : ''}`} onClick={() => setOpen(isOpen ? null : r.watch.itemId)} aria-expanded={isOpen}>
+                      <tr
+                        className={`watch-row ${isOpen ? 'editing' : ''} ${leaveCls}`}
+                        onClick={() => setOpen(isOpen ? null : r.watch.itemId)}
+                        aria-expanded={isOpen}
+                      >
                         <td className="check">
                           <button
-                            className={`row-icon fav ${r.watch.favorite ? 'on' : ''}`}
+                            className={`row-icon fav ${starred ? 'on' : ''}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleFavorite(r);
                             }}
-                            title={r.watch.favorite ? 'Remove from favorites' : 'Add to favorites'}
-                            aria-label={r.watch.favorite ? `Remove ${r.name} from favorites` : `Add ${r.name} to favorites`}
-                            aria-pressed={r.watch.favorite}
+                            title={phase ? 'Keep in favorites' : starred ? 'Remove from favorites' : 'Add to favorites'}
+                            aria-label={phase ? `Keep ${r.name} in favorites` : starred ? `Remove ${r.name} from favorites` : `Add ${r.name} to favorites`}
+                            aria-pressed={starred}
                           >
-                            {r.watch.favorite ? '★' : '☆'}
+                            <span className="star-off" aria-hidden>
+                              ☆
+                            </span>
+                            <span className="star-on" aria-hidden>
+                              ★
+                            </span>
                           </button>
                         </td>
                         <td className="nowrap">
@@ -177,6 +238,11 @@ export function FlipPage() {
                             </span>
                           )}
                           {r.settings.ahType === 'neutral' && <span className="badge">neutral</span>}
+                          {phase && (
+                            <span className="leaving-note" role="status">
+                              Leaving the list. Click ☆ to keep it.
+                            </span>
+                          )}
                         </td>
                         <td className={`r ${isDeal(r.row) ? 'deal' : ''}`} title={isDeal(r.row) ? 'At or under "buy below": worth buying' : undefined}>
                           <Money value={r.row.lastLow} />
@@ -204,7 +270,7 @@ export function FlipPage() {
                         </td>
                       </tr>
                       {isOpen && (
-                        <tr className="editor-row">
+                        <tr className={`editor-row ${leaveCls}`}>
                           <td colSpan={9}>
                             <div className="row-detail">
                               <QuickCalc r={r} config={config} targetMargin={margin} onChange={(patch) => save(r.watch.itemId, patch)} />
