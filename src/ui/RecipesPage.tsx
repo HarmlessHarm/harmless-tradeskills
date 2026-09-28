@@ -7,7 +7,7 @@ import { tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, ItemPicker, NumberInput, Panel } from './common';
 import { deleteConfirmText, recipeUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
-import { SelectAll, SelectionBar, useSelection } from './Selection';
+import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
 import { ImportBox } from './ItemsPage';
 
 const KINDS = ['craft', 'disenchant', 'convert'];
@@ -133,12 +133,12 @@ export function RecipesPage() {
                     <span className="muted">{ago(r.fetchedAt ?? r.updatedAt)}</span>
                   </td>
                   <td className="actions">
-                    <button className="link-btn" onClick={() => setEditing(editing === r.id ? null : r.id)}>
-                      {editing === r.id ? 'close' : 'edit'}
-                    </button>
-                    <button className="link-btn danger-link" onClick={() => remove([r.id])} aria-label={`Delete ${rec.name}`}>
-                      delete
-                    </button>
+                    <RowActions
+                      name={rec.name}
+                      editing={editing === r.id}
+                      onEdit={() => setEditing(editing === r.id ? null : r.id)}
+                      onDelete={() => remove([r.id])}
+                    />
                   </td>
                 </tr>
               ))}

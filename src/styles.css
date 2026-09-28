@@ -707,11 +707,36 @@ label.inline {
 .table tr.selected td {
   background: rgba(227, 179, 65, 0.06);
 }
-.link-btn.danger-link {
-  color: var(--muted);
+.row-actions {
+  display: inline-flex;
+  gap: 4px;
 }
-.link-btn.danger-link:hover {
+.row-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.row-icon.edit {
+  color: var(--gold);
+}
+.row-icon.delete {
   color: var(--neg);
+}
+.row-icon:hover:not(:disabled),
+.row-icon.on {
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+.row-icon.edit:hover:not(:disabled),
+.row-icon.edit.on {
+  border-color: var(--gold-dim);
+}
+.row-icon.delete:hover:not(:disabled) {
+  border-color: var(--neg);
 }
 .selection-bar {
   display: flex;

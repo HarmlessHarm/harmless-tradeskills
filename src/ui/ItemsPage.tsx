@@ -8,7 +8,7 @@ import { parseWowheadRef, tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, Money, MoneyInput, NumberInput, Panel } from './common';
 import { deleteConfirmText, itemUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
-import { SelectAll, SelectionBar, useSelection } from './Selection';
+import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 
 export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
@@ -149,12 +149,12 @@ export function ItemsPage() {
                     <SourceBadge record={r} />
                   </td>
                   <td className="actions">
-                    <button className="link-btn" onClick={() => setEditing(editing === r.id ? null : r.id)}>
-                      {editing === r.id ? 'close' : 'edit'}
-                    </button>
-                    <button className="link-btn danger-link" onClick={() => remove([r.id])} aria-label={`Delete ${it.name}`}>
-                      delete
-                    </button>
+                    <RowActions
+                      name={it.name}
+                      editing={editing === r.id}
+                      onEdit={() => setEditing(editing === r.id ? null : r.id)}
+                      onDelete={() => remove([r.id])}
+                    />
                   </td>
                 </tr>
               ))}
