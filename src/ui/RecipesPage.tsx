@@ -2,13 +2,14 @@ import { Fragment, useState } from 'react';
 import { effectiveRecipe } from '../engine/items';
 import type { Recipe, RecipeFields, RecipeOutput, RecipeRecord } from '../engine/types';
 import { professionOptions } from '../professions';
+import { setProfession } from '../state/actions';
 import { importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, ItemPicker, NumberInput, Panel } from './common';
 import { deleteConfirmText, recipeUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
-import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
+import { RowActions, RowCheckbox, SelectAll, SelectionBar, useSelection } from './Selection';
 import { useEditSession } from './useEditSession';
 import { ImportBox } from './ItemsPage';
 import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
@@ -27,6 +28,8 @@ export function RecipesPage() {
   const [profFilter, setProfFilter] = useState<string>(ALL);
   const [bulk, setBulk] = useState(false);
   const sort = useSort<RecipeSortKey>('name');
+  const [bulkProf, setBulkProf] = useState('');
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
 
   const itemName = (id: number) => engine.items.get(id)?.name.toLowerCase() ?? '';
   const createdLevel = (rec: Recipe) => {
@@ -66,7 +69,24 @@ export function RecipesPage() {
     },
     ({ rec }) => rec.name,
   );
+  const visibleKeys = rows.map(({ r }) => r.id);
   const filtering = q !== '' || profFilter !== ALL;
+
+  /** Bulk edit: set or clear the profession on every selected recipe. */
+  const applyProfession = () => {
+    const profession = bulkProf.trim() || null;
+    const records = recipeRecords.filter((r) => sel.has(r.id));
+    const changed = mutate((repo) => setProfession(repo, records, profession));
+    // Keep an open editor's draft in step, so saving it later does not undo this.
+    if (editing !== null && sel.has(editing)) {
+      edit.update((r) => {
+        const overrides = { ...r.overrides };
+        delete overrides.profession;
+        return { ...r, imported: { ...r.imported, profession }, overrides };
+      });
+    }
+    setBulkMsg(`${profession ? `Set ${profession}` : 'Cleared profession'} on ${changed} recipe${changed === 1 ? '' : 's'}`);
+  };
 
   const remove = (ids: string[]) => {
     if (ids.length === 0) return;
@@ -147,13 +167,42 @@ export function RecipesPage() {
             </button>
           )}
         </div>
-        <SelectionBar count={sel.selected.size} onDelete={() => remove([...sel.selected])} onClear={sel.clear} />
+        <SelectionBar
+          count={sel.selected.size}
+          onDelete={() => remove([...sel.selected])}
+          onClear={() => {
+            sel.clear();
+            setBulkMsg(null);
+          }}
+        >
+          <span className="bulk-edit">
+            <input
+              className="short-input"
+              list="bulk-edit-professions"
+              placeholder="Profession"
+              value={bulkProf}
+              onChange={(e) => {
+                setBulkProf(e.target.value);
+                setBulkMsg(null);
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && applyProfession()}
+              aria-label="Profession for selected recipes"
+            />
+            <datalist id="bulk-edit-professions">
+              {professionOptions(usedProfessions).map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+            <button onClick={applyProfession}>{bulkProf.trim() ? 'Set profession' : 'Clear profession'}</button>
+            {bulkMsg && <span className="small muted">{bulkMsg}</span>}
+          </span>
+        </SelectionBar>
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
                 <th className="check">
-                  <SelectAll keys={rows.map(({ r }) => r.id)} sel={sel} />
+                  <SelectAll keys={visibleKeys} sel={sel} />
                 </th>
                 <SortHeader label="Recipe" k="name" sort={sort} />
                 <SortHeader label="Profession" k="profession" sort={sort} />
@@ -171,7 +220,7 @@ export function RecipesPage() {
                 <Fragment key={r.id}>
                 <tr className={`${sel.has(r.id) ? 'selected' : ''} ${editing === r.id ? 'editing' : ''}`}>
                   <td className="check">
-                    <input type="checkbox" aria-label={`Select ${rec.name}`} checked={sel.has(r.id)} onChange={(e) => sel.toggle(r.id, e.target.checked)} />
+                    <RowCheckbox k={r.id} label={`Select ${rec.name}`} visibleKeys={visibleKeys} sel={sel} />
                   </td>
                   <td>
                     {r.spellId ? (

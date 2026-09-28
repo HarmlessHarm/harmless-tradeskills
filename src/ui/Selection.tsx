@@ -1,26 +1,65 @@
-import { useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
-/** Row selection for list pages. */
+/**
+ * Set every key between the anchor and the target (inclusive, in display order) to `on`.
+ * Falls back to just the target when the anchor is no longer visible.
+ */
+export function selectRange<K>(prev: Set<K>, keys: K[], anchor: K | null, target: K, on: boolean): Set<K> {
+  const next = new Set(prev);
+  const a = anchor === null ? -1 : keys.indexOf(anchor);
+  const b = keys.indexOf(target);
+  const [from, to] = a < 0 || b < 0 ? [b, b] : [Math.min(a, b), Math.max(a, b)];
+  for (let i = from; i <= to && i >= 0; i++) {
+    if (on) next.add(keys[i]);
+    else next.delete(keys[i]);
+  }
+  if (b < 0) {
+    if (on) next.add(target);
+    else next.delete(target);
+  }
+  return next;
+}
+
+/** Row selection for list pages. Shift-click selects or clears a range, like a file manager. */
 export function useSelection<K>() {
   const [selected, setSelected] = useState<Set<K>>(new Set());
+  const anchor = useRef<K | null>(null);
   return {
     selected,
     has: (k: K) => selected.has(k),
-    toggle: (k: K, on: boolean) =>
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (on) next.add(k);
-        else next.delete(k);
-        return next;
-      }),
+    toggle: (k: K, on: boolean) => {
+      anchor.current = k;
+      setSelected((prev) => selectRange(prev, [k], null, k, on));
+    },
+    /** A row checkbox click; with shift, applies to every visible row since the last click. */
+    click: (k: K, on: boolean, shift: boolean, visibleKeys: K[]) => {
+      const from = shift ? anchor.current : null;
+      anchor.current = k;
+      setSelected((prev) => selectRange(prev, visibleKeys, from, k, on));
+    },
     setAll: (keys: K[], on: boolean) =>
       setSelected((prev) => {
         const next = new Set(prev);
         keys.forEach((k) => (on ? next.add(k) : next.delete(k)));
         return next;
       }),
-    clear: () => setSelected(new Set()),
+    clear: () => {
+      anchor.current = null;
+      setSelected(new Set());
+    },
   };
+}
+
+/** A row's checkbox. React fires checkbox onChange from the click, so the shift key is readable. */
+export function RowCheckbox<K>({ k, label, visibleKeys, sel }: { k: K; label: string; visibleKeys: K[]; sel: ReturnType<typeof useSelection<K>> }) {
+  return (
+    <input
+      type="checkbox"
+      aria-label={label}
+      checked={sel.has(k)}
+      onChange={(e) => sel.click(k, e.target.checked, (e.nativeEvent as MouseEvent).shiftKey === true, visibleKeys)}
+    />
+  );
 }
 
 /** Header checkbox that selects or clears every visible row. */
@@ -29,11 +68,13 @@ export function SelectAll<K>({ keys, sel }: { keys: K[]; sel: ReturnType<typeof 
   return <input type="checkbox" aria-label="Select all" checked={all} disabled={keys.length === 0} onChange={(e) => sel.setAll(keys, e.target.checked)} />;
 }
 
-export function SelectionBar({ count, onDelete, onClear }: { count: number; onDelete: () => void; onClear: () => void }) {
+/** Actions for the selected rows. Pages add their own bulk edits as children. */
+export function SelectionBar({ count, onDelete, onClear, children }: { count: number; onDelete: () => void; onClear: () => void; children?: ReactNode }) {
   if (count === 0) return null;
   return (
     <div className="selection-bar">
       <span className="small">{count} selected</span>
+      {children}
       <button className="danger" onClick={onDelete}>
         Delete selected
       </button>

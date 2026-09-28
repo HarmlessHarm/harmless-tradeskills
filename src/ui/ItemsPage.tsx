@@ -8,7 +8,7 @@ import { parseWowheadRef, tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, Money, MoneyInput, NumberInput, Panel } from './common';
 import { deleteConfirmText, itemUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
-import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
+import { RowActions, RowCheckbox, SelectAll, SelectionBar, useSelection } from './Selection';
 import { useEditSession } from './useEditSession';
 import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
@@ -96,6 +96,7 @@ export function ItemsPage() {
     },
     ({ it }) => it.name,
   );
+  const visibleKeys = rows.map(({ r }) => r.id);
   const filtering = q !== '' || typeFilter !== 'all';
 
   const remove = (ids: number[]) => {
@@ -160,7 +161,7 @@ export function ItemsPage() {
             <thead>
               <tr>
                 <th className="check">
-                  <SelectAll keys={rows.map(({ r }) => r.id)} sel={sel} />
+                  <SelectAll keys={visibleKeys} sel={sel} />
                 </th>
                 <SortHeader label="Item" k="name" sort={sort} />
                 <SortHeader label="iLvl" k="ilvl" sort={sort} className="r" />
@@ -179,7 +180,7 @@ export function ItemsPage() {
                 <Fragment key={r.id}>
                 <tr className={`${sel.has(r.id) ? 'selected' : ''} ${editing === r.id ? 'editing' : ''}`}>
                   <td className="check">
-                    <input type="checkbox" aria-label={`Select ${it.name}`} checked={sel.has(r.id)} onChange={(e) => sel.toggle(r.id, e.target.checked)} />
+                    <RowCheckbox k={r.id} label={`Select ${it.name}`} visibleKeys={visibleKeys} sel={sel} />
                   </td>
                   <td>
                     <ItemName id={r.id} link />
