@@ -9,6 +9,7 @@
  * Be polite (NFR-4): callers fetch on demand only and cache the result in the database.
  */
 import type { ItemClass, ItemFields, Qty, Quality, RecipeFields } from '../engine/types';
+import { PROFESSIONS } from '../professions';
 
 export type WowheadType = 'item' | 'spell';
 
@@ -59,6 +60,16 @@ export function extractWowheadRefs(html: string, text = ''): PastedRef[] {
   const urls = /wowhead\.com\/\S*?\b(item|spell)=(\d+)/gi;
   for (let m = urls.exec(text); m; m = urls.exec(text)) add(m[1].toLowerCase() as WowheadType, Number(m[2]), null);
   return [...found.values()];
+}
+
+/**
+ * Drop spell links to a profession itself, such as "Alchemy" in a copied recipe table: the
+ * profession is a spell on Wowhead, but not a recipe. Matched by link text against known
+ * professions and any extra names (such as the professions found in the same paste).
+ */
+export function withoutProfessionSpells(refs: PastedRef[], extraNames: string[] = []): PastedRef[] {
+  const names = new Set([...PROFESSIONS, ...extraNames].map((n) => n.toLowerCase()));
+  return refs.filter((r) => !(r.type === 'spell' && r.name && names.has(r.name.toLowerCase())));
 }
 
 /**

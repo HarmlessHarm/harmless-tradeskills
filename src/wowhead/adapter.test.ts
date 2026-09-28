@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { extractProfessions, extractVendorPrices, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
+import { extractProfessions, extractVendorPrices, withoutProfessionSpells, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
 
 /** Real Forever tooltip responses, saved byte for byte. See fixtures/. */
 const fixture = (name: string): TooltipResponse =>
@@ -42,6 +42,19 @@ describe('extractWowheadRefs', () => {
       { type: 'spell', id: 25124, name: null },
       { type: 'item', id: 10940, name: null },
     ]);
+  });
+});
+
+describe('withoutProfessionSpells', () => {
+  it('drops spell links named after a profession, keeping recipes and items', () => {
+    const refs = [
+      { type: 'spell' as const, id: 2259, name: 'Alchemy' },
+      { type: 'spell' as const, id: 2330, name: 'Minor Healing Potion' },
+      { type: 'item' as const, id: 118, name: 'Minor Healing Potion' },
+      { type: 'spell' as const, id: 99_999, name: 'Jewelcrafting' },
+      { type: 'spell' as const, id: 12_345, name: null },
+    ];
+    expect(withoutProfessionSpells(refs, ['Jewelcrafting']).map((r) => r.id)).toEqual([2330, 118, 12_345]);
   });
 });
 
