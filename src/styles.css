@@ -1064,6 +1064,17 @@ th.r .sort-btn {
 .pct-input {
   width: 64px;
 }
+/* Header controls: centre everything on one line and match the segmented control to input height. */
+.panel-actions .segmented {
+  align-self: center;
+}
+.panel-actions .segmented button {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.panel-actions label.inline {
+  margin: 0;
+}
 .quick-calc {
   padding: 12px 0 2px;
   /* Stay in view and wrap to the screen when the table scrolls sideways on narrow screens. */
