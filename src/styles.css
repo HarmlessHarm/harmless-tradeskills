@@ -326,6 +326,12 @@ label.inline {
   background: transparent;
   border-color: transparent;
 }
+a.wf-item {
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-decoration: none;
+}
 .wf-item.on {
   background: var(--panel);
   border-color: var(--line);

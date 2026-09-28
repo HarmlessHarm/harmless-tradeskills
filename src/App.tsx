@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { DisenchantPage } from './ui/DisenchantPage';
+import { useEffect, useState, type ComponentType } from 'react';
 import { FlipPage } from './ui/FlipPage';
 import { ItemsPage } from './ui/ItemsPage';
 import { RecipesPage } from './ui/RecipesPage';
@@ -11,25 +10,29 @@ const TABS = [
   { key: 'flip', label: 'AH flip', Page: FlipPage },
   { key: 'items', label: 'Items', Page: ItemsPage },
   { key: 'recipes', label: 'Recipes', Page: RecipesPage },
-  { key: 'disenchant', label: 'Disenchant', Page: DisenchantPage },
   { key: 'settings', label: 'Settings', Page: SettingsPage },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
 
-const fromHash = (): TabKey => {
+/** The hash is `#tab` or `#tab/sub`, where sub picks a section inside the tab. */
+const fromHash = (): { tab: TabKey; sub?: string } => {
   const h = window.location.hash.slice(1);
-  return (TABS.find((t) => t.key === h)?.key ?? 'workflows') as TabKey;
+  // Disenchant rules used to be a top-level tab.
+  if (h === 'disenchant') return { tab: 'settings', sub: 'disenchant' };
+  const [key, sub] = h.split('/');
+  const tab = (TABS.find((t) => t.key === key)?.key ?? 'workflows') as TabKey;
+  return { tab, sub };
 };
 
 export function App() {
-  const [tab, setTab] = useState<TabKey>(fromHash);
+  const [{ tab, sub }, setRoute] = useState(fromHash);
   useEffect(() => {
-    const onHash = () => setTab(fromHash());
+    const onHash = () => setRoute(fromHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  const { Page } = TABS.find((t) => t.key === tab)!;
+  const Page: ComponentType<{ sub?: string }> = TABS.find((t) => t.key === tab)!.Page;
 
   return (
     <div className="app">
@@ -47,7 +50,7 @@ export function App() {
         </nav>
       </header>
       <main className="content">
-        <Page />
+        <Page sub={sub} />
       </main>
     </div>
   );
