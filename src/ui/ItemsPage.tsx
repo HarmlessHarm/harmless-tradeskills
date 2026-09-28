@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { effectiveItem } from '../engine/items';
 import { QUALITY_NAMES, type ItemClass, type ItemFields, type ItemRecord, type Quality } from '../engine/types';
 import { createManualItem, setItemOverride } from '../state/actions';
@@ -69,7 +69,6 @@ export function ItemsPage() {
     .map((r) => ({ r, it: effectiveItem(r) }))
     .filter(({ it }) => !f || it.name.toLowerCase().includes(f) || String(it.id) === f)
     .sort((a, b) => a.it.name.localeCompare(b.it.name));
-  const editRecord = itemRecords.find((r) => r.id === editing);
 
   const remove = (ids: number[]) => {
     if (ids.length === 0) return;
@@ -117,7 +116,8 @@ export function ItemsPage() {
             </thead>
             <tbody>
               {rows.map(({ r, it }) => (
-                <tr key={r.id} className={sel.has(r.id) ? 'selected' : ''}>
+                <Fragment key={r.id}>
+                <tr className={`${sel.has(r.id) ? 'selected' : ''} ${editing === r.id ? 'editing' : ''}`}>
                   <td className="check">
                     <input type="checkbox" aria-label={`Select ${it.name}`} checked={sel.has(r.id)} onChange={(e) => sel.toggle(r.id, e.target.checked)} />
                   </td>
@@ -157,6 +157,14 @@ export function ItemsPage() {
                     />
                   </td>
                 </tr>
+                {editing === r.id && (
+                  <tr className="editor-row">
+                    <td colSpan={11}>
+                      <ItemEditor record={r} onDelete={() => remove([r.id])} onClose={() => setEditing(null)} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
               {rows.length === 0 && (
                 <tr>
@@ -176,6 +184,7 @@ export function ItemsPage() {
             disabled={!newId || !newName.trim() || itemRecords.some((r) => r.id === newId)}
             onClick={() => {
               mutate((repo) => createManualItem(repo, newId!, newName.trim()));
+              setFilter('');
               setEditing(newId);
               setNewId(null);
               setNewName('');
@@ -185,7 +194,6 @@ export function ItemsPage() {
           </button>
         </div>
       </Panel>
-      {editRecord && <ItemEditor key={editRecord.id} record={editRecord} onDelete={() => remove([editRecord.id])} />}
     </div>
   );
 }
@@ -202,7 +210,7 @@ function SourceBadge({ record }: { record: ItemRecord }) {
 }
 
 /** Edit overrides per field. Imported values stay visible; clearing an override reverts to them (DEC-6). */
-function ItemEditor({ record, onDelete }: { record: ItemRecord; onDelete: () => void }) {
+function ItemEditor({ record, onDelete, onClose }: { record: ItemRecord; onDelete: () => void; onClose: () => void }) {
   const { mutate, mutateAsync } = useStore();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -272,6 +280,7 @@ function ItemEditor({ record, onDelete }: { record: ItemRecord; onDelete: () => 
           <button className="danger" onClick={onDelete}>
             Delete
           </button>
+          <button onClick={onClose}>Close</button>
         </>
       }
     >

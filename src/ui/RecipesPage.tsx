@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { effectiveRecipe } from '../engine/items';
 import type { RecipeFields, RecipeOutput, RecipeRecord } from '../engine/types';
 import { importRecipe } from '../state/importer';
@@ -24,7 +24,6 @@ export function RecipesPage() {
     .map((r) => ({ r, rec: effectiveRecipe(r) }))
     .filter(({ rec }) => !f || rec.name.toLowerCase().includes(f) || rec.id.includes(f))
     .sort((a, b) => a.rec.name.localeCompare(b.rec.name));
-  const editRecord = recipeRecords.find((r) => r.id === editing);
 
   const remove = (ids: string[]) => {
     if (ids.length === 0) return;
@@ -52,6 +51,7 @@ export function RecipesPage() {
       });
       return id;
     });
+    setFilter('');
     setEditing(id);
   };
 
@@ -91,7 +91,8 @@ export function RecipesPage() {
             </thead>
             <tbody>
               {rows.map(({ r, rec }) => (
-                <tr key={r.id} className={sel.has(r.id) ? 'selected' : ''}>
+                <Fragment key={r.id}>
+                <tr className={`${sel.has(r.id) ? 'selected' : ''} ${editing === r.id ? 'editing' : ''}`}>
                   <td className="check">
                     <input type="checkbox" aria-label={`Select ${rec.name}`} checked={sel.has(r.id)} onChange={(e) => sel.toggle(r.id, e.target.checked)} />
                   </td>
@@ -110,11 +111,6 @@ export function RecipesPage() {
                     {rec.inputs.map((i, k) => (
                       <div key={k}>
                         {i.qty} <ItemName id={i.itemId} />
-                      </div>
-                    ))}
-                    {rec.tools.map((t) => (
-                      <div key={t} className="muted">
-                        tool: <ItemName id={t} />
                       </div>
                     ))}
                   </td>
@@ -141,6 +137,14 @@ export function RecipesPage() {
                     />
                   </td>
                 </tr>
+                {editing === r.id && (
+                  <tr className="editor-row">
+                    <td colSpan={8}>
+                      <RecipeEditor record={r} onDelete={() => remove([r.id])} onClose={() => setEditing(null)} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
               {rows.length === 0 && (
                 <tr>
@@ -153,14 +157,13 @@ export function RecipesPage() {
           </table>
         </div>
       </Panel>
-      {editRecord && <RecipeEditor key={editRecord.id} record={editRecord} onDelete={() => remove([editRecord.id])} />}
     </div>
   );
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function RecipeEditor({ record, onDelete }: { record: RecipeRecord; onDelete: () => void }) {
+function RecipeEditor({ record, onDelete, onClose }: { record: RecipeRecord; onDelete: () => void; onClose: () => void }) {
   const { mutate, mutateAsync } = useStore();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -213,6 +216,7 @@ function RecipeEditor({ record, onDelete }: { record: RecipeRecord; onDelete: ()
           <button className="danger" onClick={onDelete}>
             Delete
           </button>
+          <button onClick={onClose}>Close</button>
         </>
       }
     >
@@ -271,19 +275,6 @@ function RecipeEditor({ record, onDelete }: { record: RecipeRecord; onDelete: ()
         </tbody>
       </table>
       <AddItemRow label="Add reagent" onAdd={(id) => set('inputs', [...rec.inputs, { itemId: id, qty: 1 }])} />
-
-      <h3>Tools (required, not used up)</h3>
-      <div className="chips">
-        {rec.tools.map((t) => (
-          <span key={t} className="chip">
-            <ItemName id={t} />
-            <button className="icon-btn" onClick={() => set('tools', rec.tools.filter((x) => x !== t))} aria-label="Remove tool">
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
-      <AddItemRow label="Add tool" onAdd={(id) => !rec.tools.includes(id) && set('tools', [...rec.tools, id])} />
 
       <h3>Outputs</h3>
       <label className="inline small">
