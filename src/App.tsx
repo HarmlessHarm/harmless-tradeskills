@@ -5,13 +5,16 @@ import { RecipesPage } from './ui/RecipesPage';
 import { SettingsPage } from './ui/SettingsPage';
 import { WorkflowsPage } from './ui/WorkflowsPage';
 
-/** `divider` starts a new group: workflows and flips are personal data, items and recipes game data. */
+/**
+ * `divider` starts a new group: workflows and flips are personal data, items and recipes game
+ * data, and settings covers both.
+ */
 const TABS = [
   { key: 'workflows', label: 'Workflows', Page: WorkflowsPage },
   { key: 'flip', label: 'AH flip', Page: FlipPage },
   { key: 'items', label: 'Items', Page: ItemsPage, divider: true },
   { key: 'recipes', label: 'Recipes', Page: RecipesPage },
-  { key: 'settings', label: 'Settings', Page: SettingsPage },
+  { key: 'settings', label: 'Settings', Page: SettingsPage, divider: true },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
