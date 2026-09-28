@@ -122,7 +122,7 @@ button.danger:hover:not(:disabled) {
 .num-input {
   width: 80px;
 }
-.item-picker {
+.combo.item-picker {
   width: 240px;
 }
 .search {
@@ -878,9 +878,12 @@ th.r .sort-btn {
   letter-spacing: 0;
 }
 
-/* Search combobox with a result list (recipe search when adding steps) */
+/* Search combobox with a result list (recipe search, item pickers) */
 .combo {
   position: relative;
+  display: inline-block;
+}
+.combo.recipe-search {
   flex: 1 1 320px;
   max-width: 520px;
 }
@@ -892,7 +895,9 @@ th.r .sort-btn {
   z-index: 20;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(520px, 90vw);
   max-height: 320px;
   overflow-y: auto;
   margin: 0;
@@ -916,6 +921,18 @@ th.r .sort-btn {
 }
 .combo-list li.combo-empty {
   cursor: default;
+}
+.combo-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.combo-tag {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--gold);
 }
 .combo-io .hit {
   color: var(--gold);
