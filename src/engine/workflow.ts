@@ -1,5 +1,5 @@
 import { deposit, netOnSale } from './ah';
-import { deriveDisenchantRecipe } from './disenchant';
+import { anyItem, anyItemId, deriveDisenchantRecipe, isAnyItem } from './disenchant';
 import { expectedQty } from './items';
 import { price, type PriceContext } from './prices';
 import { mulberry32, percentile, randInt } from './random';
@@ -54,6 +54,21 @@ export interface MissingPrice {
   what: 'ah price' | 'vendor buy price' | 'vendor sell price';
 }
 
+/**
+ * The most you can pay for the "any item" of a 'disenchant-any' step, per item. Profit figures of such
+ * a workflow leave out what that item costs, since that price is what gets solved for.
+ */
+export interface BuyLimit {
+  itemId: number;
+  qtyPerUnit: number;
+  /** Expected profit is zero at this price. */
+  breakEven: Copper;
+  /** The worst case batch (P5 with pessimistic prices) breaks even at this price. */
+  worstCase: Copper | null;
+  /** The batch still earns the workflow's target gold per hour at this price. */
+  forTarget: Copper | null;
+}
+
 export interface SimulationResult {
   batchSize: number;
   /** No step has chance-based or ranged outputs, so one exact pass replaces the Monte Carlo. */
@@ -92,19 +107,21 @@ export interface WorkflowAnalysis {
   batchDeposits: Copper;
   goldPerHourCopper: Copper;
   simulation: SimulationResult | null;
+  buyLimit: BuyLimit | null;
 }
 
 const EPS = 1e-9;
 
 export function resolveStep(data: EngineData, step: WorkflowStep): Recipe | null {
   if (step.type === 'recipe') return data.recipes.get(step.recipeId) ?? null;
-  const item = data.items.get(step.itemId);
+  const item = itemFor(data, step.type === 'disenchant' ? step.itemId : anyStepItemId(step));
   if (!item) return null;
   return deriveDisenchantRecipe(data.deRules, item, data.config.disenchantCastMs);
 }
 
 export function describeStep(data: EngineData, step: WorkflowStep): string {
   if (step.type === 'recipe') return data.recipes.get(step.recipeId)?.name ?? `Missing recipe ${step.recipeId}`;
+  if (step.type === 'disenchant-any') return `Disenchant ${itemFor(data, anyStepItemId(step))!.name.replace(/^Any/, 'any')}`;
   return `Disenchant ${data.items.get(step.itemId)?.name ?? `item #${step.itemId}`}`;
 }
 
@@ -123,11 +140,21 @@ export function insertBeforeConsumer(data: EngineData, steps: WorkflowStep[], it
   return next;
 }
 
+export const anyStepItemId = (step: Extract<WorkflowStep, { type: 'disenchant-any' }>) =>
+  anyItemId(step.quality, step.itemClass, step.itemLevel);
+
+/** An item from the catalog, or the stand-in for an "any item" ID. */
+export function itemFor(data: Pick<EngineData, 'items' | 'deRules'>, itemId: number): Item | null {
+  return data.items.get(itemId) ?? anyItem(data.deRules, itemId);
+}
+
 /**
- * Default unit: the item fed into the first non-craft step (e.g. the gloves that get disenchanted),
+ * Default unit: the "any item" bought for a 'disenchant-any' step, else the item fed into the first non-craft step (e.g. the gloves that get disenchanted),
  * otherwise the first step's main product.
  */
 export function defaultUnitItem(recipes: Recipe[]): number | null {
+  const anyInput = recipes.flatMap((r) => r.inputs).find((i) => isAnyItem(i.itemId));
+  if (anyInput) return anyInput.itemId;
   const firstNonCraft = recipes.findIndex((r, i) => i > 0 && r.kind !== 'craft');
   if (firstNonCraft > 0) {
     const prev = recipes[firstNonCraft - 1];
@@ -300,6 +327,7 @@ function emptyAnalysis(errors: string[], unitItemId: number | null = null): Work
     batchDeposits: 0,
     goldPerHourCopper: 0,
     simulation: null,
+    buyLimit: null,
   };
 }
 
@@ -317,9 +345,9 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
     const r = resolveStep(data, step);
     if (!r) {
       errors.push(
-        step.type === 'disenchant'
-          ? `Step ${i + 1}: no disenchant rule matches ${describeStep(data, step).replace('Disenchant ', '')}.`
-          : `Step ${i + 1}: recipe ${step.recipeId} not found.`,
+        step.type === 'recipe'
+          ? `Step ${i + 1}: recipe ${step.recipeId} not found.`
+          : `Step ${i + 1}: no disenchant rule matches ${describeStep(data, step).replace('Disenchant ', '')}.`,
       );
     } else recipes.push(r);
   });
@@ -355,8 +383,13 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
 
   const batchSize = Math.max(1, wf.batchSize ?? cfg.defaultBatchSize);
   const externalInputs: ExternalInput[] = [];
+  const anyInputs: { itemId: number; qtyPerUnit: number }[] = [];
   for (const [itemId, qty] of bought) {
     if (qty < EPS) continue;
+    if (isAnyItem(itemId)) {
+      anyInputs.push({ itemId, qtyPerUnit: qty });
+      continue;
+    }
     const source = buySourceFor(data, wf, itemId);
     const unitPrice = buyPrice(data, itemId, source);
     if (unitPrice === null) noteMissing(itemId, source === 'vendor' ? 'vendor buy price' : 'ah price');
@@ -403,6 +436,7 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
   const goldPerHourCopper = batchTimeSec > 0 ? (batchProfit / batchTimeSec) * 3600 : 0;
 
   const warnings: string[] = [];
+  if (anyInputs.length > 1) warnings.push('Only the first "any item" gets a buy limit; the others count as free.');
   if (missing.length) warnings.push('Some prices are missing and count as 0.');
   if (terminalOutputs.some((o) => o.disposition === 'ah'))
     warnings.push('AH sales assume the item sells on the first listing (deposit refunded).');
@@ -428,12 +462,43 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
     batchDeposits,
     goldPerHourCopper,
     simulation: null,
+    buyLimit: null,
   };
 
   if (opts.simulate !== false) {
     analysis.simulation = simulateBatch(data, wf, recipes, links, runs, analysis, opts.seed ?? 1);
   }
+  if (anyInputs.length) analysis.buyLimit = solveBuyLimit(wf, recipes, links, runs, analysis, anyInputs[0]);
   return analysis;
+}
+
+/**
+ * The price per item at which the batch profit, which leaves this item's cost out, is used up
+ * (DEC-20). Prices round down to whole copper, so paying the limit never loses.
+ */
+function solveBuyLimit(
+  wf: Workflow,
+  recipes: Recipe[],
+  links: Links,
+  runs: number[],
+  a: WorkflowAnalysis,
+  input: { itemId: number; qtyPerUnit: number },
+): BuyLimit {
+  const N = a.batchSize;
+  const perItem = (batchValue: number, itemsPerBatch: number) => (itemsPerBatch > 0 ? Math.floor(batchValue / itemsPerBatch) : 0);
+  // The simulation buys whole runs of steps without linked inputs, so count the items the same way.
+  const simItems = recipes.reduce((sum, r, s) => {
+    const n = links.linked[s].size === 0 ? Math.round(runs[s] * N) : runs[s] * N;
+    return sum + n * consumedBy(r, input.itemId);
+  }, 0);
+  const target = wf.targetGoldPerHour;
+  return {
+    itemId: input.itemId,
+    qtyPerUnit: input.qtyPerUnit,
+    breakEven: perItem(a.profitPerUnit, input.qtyPerUnit),
+    worstCase: a.simulation ? perItem(a.simulation.worstCase, simItems) : null,
+    forTarget: target === null ? null : perItem(a.batchProfit - (target * a.batchTimeSec) / 3600, N * input.qtyPerUnit),
+  };
 }
 
 /**

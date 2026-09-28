@@ -336,6 +336,10 @@ label.inline {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
 .note {
   color: var(--muted);

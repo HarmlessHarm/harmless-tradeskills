@@ -1,30 +1,56 @@
 import { useMemo, useState } from 'react';
-import { findDisenchantRule } from '../engine/disenchant';
-import type { Item, Recipe, Workflow, WorkflowStep } from '../engine/types';
+import { anyItemId, findDisenchantRule } from '../engine/disenchant';
+import { QUALITY_NAMES, type Item, type Quality, type Recipe, type Workflow, type WorkflowStep } from '../engine/types';
 import {
   analyzeWorkflow,
   describeStep,
   dispositionFor,
   insertBeforeConsumer,
+  itemFor,
   producersOf,
   resolveStep,
+  type BuyLimit,
   type ExternalInput,
   type WorkflowAnalysis,
 } from '../engine/workflow';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
-import { Combo, errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, NumberInput, Panel, Segmented } from './common';
+import { Combo, errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 import { searchRecipes } from './recipeSearch';
 
-const QUICKSTART = {
-  name: 'DE shuffle',
-  notes: 'Linen to gloves, disenchant, dust and essence into oil and wands. Vendor the results.',
-  spells: [2963, 3840, 25124, 14807],
-  gloves: 4307,
-  /** Coarse Thread, Maple Seed, Empty Vial, Simple Wood come from a vendor. */
-  vendorBuys: [2320, 17034, 3371, 4470],
-};
+/** Coarse Thread, Maple Seed, Empty Vial, Simple Wood come from a vendor. */
+const VENDOR_BUYS = [2320, 17034, 3371, 4470];
+const OIL_AND_WANDS: WorkflowStep[] = [
+  { type: 'recipe', recipeId: 'spell:25124' },
+  { type: 'recipe', recipeId: 'spell:14807' },
+];
+
+const QUICKSTARTS = [
+  {
+    name: 'DE shuffle',
+    button: 'Import DE shuffle',
+    notes: 'Linen to gloves, disenchant, dust and essence into oil and wands. Vendor the results.',
+    spells: [2963, 3840, 25124, 14807],
+    items: [4307],
+    steps: [
+      { type: 'recipe', recipeId: 'spell:2963' },
+      { type: 'recipe', recipeId: 'spell:3840' },
+      { type: 'disenchant', itemId: 4307 },
+      ...OIL_AND_WANDS,
+    ] as WorkflowStep[],
+    done: 'Imported. Now enter vendor buy prices for thread, seed, vial and wood, and an AH price for linen.',
+  },
+  {
+    name: 'Buy greens to DE',
+    button: 'Import buy price calculator',
+    notes: 'Buy any uncommon armor up to item level 15, disenchant it, turn dust and essence into oil and wands. What can I pay per item?',
+    spells: [25124, 14807],
+    items: [],
+    steps: [{ type: 'disenchant-any', quality: 2, itemClass: 'armor', itemLevel: 15 }, ...OIL_AND_WANDS] as WorkflowStep[],
+    done: 'Imported. Now enter vendor buy prices for seed, vial and wood, and set a target gold per hour.',
+  },
+];
 
 function newWorkflow(name: string, steps: WorkflowStep[] = [], notes = ''): Workflow {
   return {
@@ -38,6 +64,7 @@ function newWorkflow(name: string, steps: WorkflowStep[] = [], notes = ''): Work
     batchSize: null,
     ahType: 'faction',
     ahDuration: '8h',
+    targetGoldPerHour: null,
     updatedAt: Date.now(),
   };
 }
@@ -63,34 +90,23 @@ export function WorkflowsPage() {
     setSelectedId(id);
   };
 
-  const quickstart = async () => {
+  const quickstart = async (qs: (typeof QUICKSTARTS)[number]) => {
     setBusy(true);
-    setMsg('Importing the DE shuffle recipes from Wowhead...');
+    setMsg(`Importing the ${qs.name} recipes from Wowhead...`);
     try {
       const problems: string[] = [];
       await mutateAsync(async (repo) => {
-        for (const spell of QUICKSTART.spells) {
+        for (const spell of qs.spells) {
           const r = await importRecipe(repo, spell);
           problems.push(...r.warnings.map((w) => `${r.recipe.imported.name}: ${w}`), ...r.itemErrors);
         }
-        await importItem(repo, QUICKSTART.gloves);
+        for (const item of qs.items) await importItem(repo, item);
       });
-      const steps: WorkflowStep[] = [
-        { type: 'recipe', recipeId: 'spell:2963' },
-        { type: 'recipe', recipeId: 'spell:3840' },
-        { type: 'disenchant', itemId: QUICKSTART.gloves },
-        { type: 'recipe', recipeId: 'spell:25124' },
-        { type: 'recipe', recipeId: 'spell:14807' },
-      ];
-      const wf = newWorkflow(QUICKSTART.name, steps, QUICKSTART.notes);
-      wf.buyMap = Object.fromEntries(QUICKSTART.vendorBuys.map((id) => [id, 'vendor' as const]));
+      const wf = newWorkflow(qs.name, qs.steps, qs.notes);
+      wf.buyMap = Object.fromEntries(VENDOR_BUYS.map((id) => [id, 'vendor' as const]));
       const id = mutate((repo) => repo.saveWorkflow(wf));
       setSelectedId(id);
-      setMsg(
-        problems.length
-          ? `Imported with notes: ${problems.join(' ')}`
-          : 'Imported. Now enter vendor buy prices for thread, seed, vial and wood, and an AH price for linen.',
-      );
+      setMsg(problems.length ? `Imported with notes: ${problems.join(' ')}` : qs.done);
     } catch (e) {
       setMsg(`Import failed: ${errorText(e)}`);
     } finally {
@@ -114,7 +130,12 @@ export function WorkflowsPage() {
                 <button className={`wf-item ${selected?.id === wf.id ? 'on' : ''}`} onClick={() => setSelectedId(wf.id)}>
                   <span className="wf-name">{wf.name}</span>
                   <span className="wf-sub">
-                    {a.ok ? (
+                    {a.ok && a.buyLimit ? (
+                      <>
+                        <span className="muted">pay up to </span>
+                        <Money value={a.buyLimit.breakEven} signed />
+                      </>
+                    ) : a.ok ? (
                       <>
                         <Money value={a.goldPerHourCopper} signed />
                         <span className="muted">/h</span>
@@ -128,12 +149,14 @@ export function WorkflowsPage() {
             );
           })}
         </ul>
-        {!workflows.some((w) => w.name === QUICKSTART.name) && (
+        {QUICKSTARTS.some((qs) => !workflows.some((w) => w.name === qs.name)) && (
           <div className="quickstart">
-            <p className="small muted">Start from the example route in the PRD:</p>
-            <button disabled={busy} onClick={quickstart}>
-              {busy ? 'Importing...' : 'Import DE shuffle'}
-            </button>
+            <p className="small muted">Start from an example route:</p>
+            {QUICKSTARTS.filter((qs) => !workflows.some((w) => w.name === qs.name)).map((qs) => (
+              <button key={qs.name} disabled={busy} onClick={() => quickstart(qs)}>
+                {busy ? 'Importing...' : qs.button}
+              </button>
+            ))}
           </div>
         )}
         {msg && <p className="small note">{msg}</p>}
@@ -144,7 +167,7 @@ export function WorkflowsPage() {
         ) : (
           <Panel title="No workflow selected">
             <p>A workflow is a known route: ordered recipe steps, where to buy what goes in, and what to do with what comes out.</p>
-            <p className="muted">Create one, or import the DE shuffle example.</p>
+            <p className="muted">Create one, or import an example.</p>
           </Panel>
         )}
       </div>
@@ -160,7 +183,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
   const resolved = wf.steps.map((s) => resolveStep(engine, s));
   const madeIds = new Set(resolved.flatMap((r) => r?.outputs.map((o) => o.itemId) ?? []));
   const baseIds = new Set(resolved.flatMap((r) => r?.inputs.map((i) => i.itemId) ?? []).filter((id) => !madeIds.has(id)));
-  const itemLabel = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
+  const itemLabel = (id: number) => itemFor(engine, id)?.name ?? `#${id}`;
   const byName = (a: number, b: number) => itemLabel(a).localeCompare(itemLabel(b));
 
   const moveStep = (i: number, d: -1 | 1) => {
@@ -194,7 +217,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
             <select value={wf.unitItemId ?? ''} onChange={(e) => save({ unitItemId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">
                 Default
-                {analysis.unitItemId && !wf.unitItemId ? ` (${engine.items.get(analysis.unitItemId)?.name ?? `#${analysis.unitItemId}`})` : ''}
+                {analysis.unitItemId && !wf.unitItemId ? ` (${itemLabel(analysis.unitItemId)})` : ''}
               </option>
               <optgroup label="Made">
                 {[...madeIds].sort(byName).map((id) => (
@@ -229,10 +252,16 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
               onChange={(ahType) => save({ ahType })}
             />
           </label>
+          {analysis.buyLimit && (
+            <label title="The buy price for this target leaves at least this much gold per hour">
+              Target gold/hour
+              <MoneyInput value={wf.targetGoldPerHour} onChange={(v) => save({ targetGoldPerHour: v })} placeholder="e.g. 5g" />
+            </label>
+          )}
         </div>
       </Panel>
 
-      <Results analysis={analysis} />
+      {analysis.ok && analysis.buyLimit ? <BuyLimitResults analysis={analysis} limit={analysis.buyLimit} target={wf.targetGoldPerHour} /> : <Results analysis={analysis} />}
 
       <Panel title="Steps">
         <ol className="steps">
@@ -567,50 +596,105 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
           </span>
         </div>
       </div>
-      <div className="result-notes small">
-        {a.tools.length > 0 && (
-          <p>
-            Tools needed:{' '}
-            {a.tools.map((t, i) => (
-              <span key={t}>
-                {i > 0 && ', '}
-                <ItemName id={t} />
-              </span>
-            ))}
-          </p>
-        )}
-        {sim && sim.leftovers.length > 0 && (
-          <p>
-            {sim.deterministic ? 'Leftovers per batch:' : 'Typical leftovers per batch:'}{' '}
-            {sim.leftovers.map((l, i) => (
-              <span key={l.itemId}>
-                {i > 0 && ', '}
-                {fmtQty(Math.round(l.avgQty * 10) / 10)} <ItemName id={l.itemId} />
-              </span>
-            ))}
-          </p>
-        )}
-        {a.missingPrices.length > 0 && (
-          <p className="warn">
-            Missing:{' '}
-            {a.missingPrices.map((m, i) => (
-              <span key={`${m.itemId}-${m.what}`}>
-                {i > 0 && ', '}
-                {m.what} for <ItemName id={m.itemId} />
-              </span>
-            ))}
-            . Counted as 0.
-          </p>
-        )}
-        {a.warnings
-          .filter((w) => !w.startsWith('Some prices'))
-          .map((w) => (
-            <p key={w} className="muted">
-              {w}
-            </p>
-          ))}
-      </div>
+      <ResultNotes analysis={a} />
     </Panel>
+  );
+}
+
+/**
+ * Results of a workflow that buys "any item" to disenchant (DEC-20): the most to pay per item instead
+ * of a profit, since the item's price is what gets solved for.
+ */
+function BuyLimitResults({ analysis: a, limit, target }: { analysis: WorkflowAnalysis; limit: BuyLimit; target: number | null }) {
+  const sim = a.simulation;
+  const perItem = limit.qtyPerUnit === 1 ? 'per item' : `per item (${round3(limit.qtyPerUnit)} per unit)`;
+  const price = (v: number | null) => (v !== null && v < 0 ? <span className="neg">not profitable</span> : <Money value={v} />);
+  return (
+    <Panel className="results">
+      <div className="kpis">
+        <div className="kpi kpi-worst">
+          <span className="kpi-label">Safe max buy price</span>
+          <span className="kpi-value">{price(limit.worstCase)}</span>
+          <span className="kpi-sub">
+            {perItem}; 95% of batches of {a.batchSize} still break even
+          </span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-label">{target !== null ? <>Buy price for <Money value={target} />/h</> : 'Buy price for a target'}</span>
+          <span className="kpi-value">{target !== null ? price(limit.forTarget) : <span className="muted">-</span>}</span>
+          <span className="kpi-sub">
+            {target !== null ? `${perItem}, on average, for a batch of ${a.batchSize}` : 'set a target gold/hour above'}
+          </span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-label">Break-even buy price</span>
+          <span className="kpi-value">{price(limit.breakEven)}</span>
+          <span className="kpi-sub">{perItem}; expected profit is zero</span>
+        </div>
+        <div className="kpi">
+          <span className="kpi-label">Time per item</span>
+          <span className="kpi-value">{formatDuration(a.timePerUnitSec)}</span>
+          <span className="kpi-sub">
+            batch of {a.batchSize} takes {formatDuration(a.batchTimeSec)}
+            {sim ? `, ${sim.runs.toLocaleString()} simulated` : ''}
+          </span>
+        </div>
+      </div>
+      <p className="small muted">
+        Per <ItemName id={limit.itemId} />: outputs sell for <Money value={a.revenuePerUnit} />, other inputs cost <Money value={a.costPerUnit} />. Paying
+        more than the break-even price loses money on average; the safe price also covers bad luck with drops and pessimistic AH prices.
+      </p>
+      <ResultNotes analysis={a} />
+    </Panel>
+  );
+}
+
+function ResultNotes({ analysis: a }: { analysis: WorkflowAnalysis }) {
+  const sim = a.simulation;
+  return (
+    <div className="result-notes small">
+      {a.tools.length > 0 && (
+        <p>
+          Tools needed:{' '}
+          {a.tools.map((t, i) => (
+            <span key={t}>
+              {i > 0 && ', '}
+              <ItemName id={t} />
+            </span>
+          ))}
+        </p>
+      )}
+      {sim && sim.leftovers.length > 0 && (
+        <p>
+          {sim.deterministic ? 'Leftovers per batch:' : 'Typical leftovers per batch:'}{' '}
+          {sim.leftovers.map((l, i) => (
+            <span key={l.itemId}>
+              {i > 0 && ', '}
+              {fmtQty(Math.round(l.avgQty * 10) / 10)} <ItemName id={l.itemId} />
+            </span>
+          ))}
+        </p>
+      )}
+      {a.missingPrices.length > 0 && (
+        <p className="warn">
+          Missing:{' '}
+          {a.missingPrices.map((m, i) => (
+            <span key={`${m.itemId}-${m.what}`}>
+              {i > 0 && ', '}
+              {m.what} for <ItemName id={m.itemId} />
+            </span>
+          ))}
+          . Counted as 0.
+        </p>
+      )}
+      {a.warnings
+        .filter((w) => !w.startsWith('Some prices'))
+        .map((w) => (
+          <p key={w} className="muted">
+            {w}
+          </p>
+        ))}
+    </div>
   );
 }
 
@@ -619,8 +703,13 @@ const disenchantable = (i: Item) => (i.itemClass === 'armor' || i.itemClass === 
 
 function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outputs: number[] }) {
   const { engine, recipeRecords, mutateAsync } = useStore();
-  const [mode, setMode] = useState<'recipe' | 'disenchant'>('recipe');
+  const [mode, setMode] = useState<'recipe' | 'disenchant' | 'disenchant-any'>('recipe');
   const [deItem, setDeItem] = useState<number | null>(null);
+  const [any, setAny] = useState<{ quality: Quality; itemClass: 'armor' | 'weapon'; itemLevel: number | null }>({
+    quality: 2,
+    itemClass: 'armor',
+    itemLevel: null,
+  });
   const [err, setErr] = useState<string | null>(null);
   const recipes = recipeRecords.map((r) => engine.recipes.get(r.id)!).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -639,6 +728,11 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
     }
   };
 
+  const addAny = () => {
+    if (any.itemLevel === null) return;
+    onAdd({ type: 'disenchant-any', quality: any.quality, itemClass: any.itemClass, itemLevel: any.itemLevel });
+  };
+
   // Items this workflow already makes that can be disenchanted come first.
   const deFromWorkflow = outputs.filter((id) => {
     const it = engine.items.get(id);
@@ -646,6 +740,10 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
   });
   const deItemObj = deItem !== null ? engine.items.get(deItem) : undefined;
   const noRule = deItemObj && !findDisenchantRule(engine.deRules, deItemObj);
+  const anyRule =
+    any.itemLevel !== null
+      ? findDisenchantRule(engine.deRules, itemFor(engine, anyItemId(any.quality, any.itemClass, any.itemLevel))!)
+      : null;
 
   return (
     <div className="add-step">
@@ -654,11 +752,31 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
         options={[
           { value: 'recipe', label: 'Recipe' },
           { value: 'disenchant', label: 'Disenchant' },
+          { value: 'disenchant-any', label: 'Disenchant any' },
         ]}
         onChange={setMode}
       />
       {mode === 'recipe' ? (
         <RecipeSearch recipes={recipes} onPick={(r) => onAdd({ type: 'recipe', recipeId: r.id })} />
+      ) : mode === 'disenchant-any' ? (
+        <>
+          <select value={any.quality} onChange={(e) => setAny({ ...any, quality: Number(e.target.value) as Quality })} aria-label="Quality">
+            {([2, 3, 4] as const).map((q) => (
+              <option key={q} value={q}>
+                {QUALITY_NAMES[q]}
+              </option>
+            ))}
+          </select>
+          <Segmented
+            value={any.itemClass}
+            options={[
+              { value: 'armor', label: 'Armor' },
+              { value: 'weapon', label: 'Weapon' },
+            ]}
+            onChange={(itemClass) => setAny({ ...any, itemClass })}
+          />
+          <NumberInput value={any.itemLevel} onChange={(itemLevel) => setAny({ ...any, itemLevel })} min={1} step={1} placeholder="Item level" />
+        </>
       ) : (
         <ItemPicker
           value={deItem}
@@ -670,7 +788,17 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
         />
       )}
       {mode === 'disenchant' && <button onClick={addDisenchant}>Add step</button>}
-      {noRule && <span className="small warn">No disenchant rule matches this item yet.</span>}
+      {mode === 'disenchant' && noRule && <span className="small warn">No disenchant rule matches this item yet.</span>}
+      {mode === 'disenchant-any' && (
+        <>
+          <button onClick={addAny}>Add step</button>
+          {any.itemLevel !== null && (
+            <span className={`small ${anyRule ? 'muted' : 'warn'}`}>
+              {anyRule ? `Any item level ${anyRule.ilvlMin}-${anyRule.ilvlMax} disenchants the same.` : 'No disenchant rule matches this band yet.'}
+            </span>
+          )}
+        </>
+      )}
       {err && <span className="small warn">{err}</span>}
     </div>
   );

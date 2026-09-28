@@ -7,6 +7,7 @@ Product docs live in [`docs/`](docs): [PRD](docs/prd.md), [architecture](docs/ar
 ## What it does
 
 - **Workflows**: saved routes such as the DE shuffle (linen to bolts to gloves, disenchant, dust and essence into oil and wands). The engine links steps, solves runs per unit, and shows profit per unit, time, gold per hour and a simulated P5 / median / P95 for a batch, with the worst case up front.
+- **Buy price limits**: a "Disenchant any" step (e.g. any uncommon armor, item level 1-15) turns a workflow into a buy price calculator: the most to pay per item to break even, to stay safe in the worst case, or to still earn a target gold per hour.
 - **AH flip**: profit after the cut, deposit lost per failed listing, and how many relists a flip can absorb.
 - **Items and recipes**: paste a Wowhead Forever link or ID to import. Missing reagents are imported on demand. For many at once, select rows in any Wowhead table, copy, and paste into Bulk import. Any field can be overridden by hand; overrides survive refreshes.
 - **Disenchant rules**: a hand-maintained table by quality, item level and armor vs weapon. Any matching item can be a "Disenchant X" step.

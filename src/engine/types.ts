@@ -113,8 +113,15 @@ export type AhType = 'faction' | 'neutral';
 export type BuySource = 'ah' | 'vendor';
 export type Disposition = 'ah' | 'vendor' | 'keep';
 
-/** A workflow step references a recipe, or derives a disenchant recipe for an item (REQ-3.2). */
-export type WorkflowStep = { type: 'recipe'; recipeId: string } | { type: 'disenchant'; itemId: number };
+/**
+ * A workflow step references a recipe, or derives a disenchant recipe for an item (REQ-3.2).
+ * 'disenchant-any' disenchants any item of a quality, type and item level band: the item is bought
+ * at a price the workflow solves for (its buy limit) instead of a set price.
+ */
+export type WorkflowStep =
+  | { type: 'recipe'; recipeId: string }
+  | { type: 'disenchant'; itemId: number }
+  | { type: 'disenchant-any'; quality: Quality; itemClass: 'armor' | 'weapon'; itemLevel: number };
 
 export interface Workflow {
   id: number;
@@ -128,6 +135,8 @@ export interface Workflow {
   batchSize: number | null;
   ahType: AhType;
   ahDuration: string;
+  /** Gold per hour to aim for when solving the buy limit of a 'disenchant-any' step. */
+  targetGoldPerHour: Copper | null;
   updatedAt: number;
 }
 
