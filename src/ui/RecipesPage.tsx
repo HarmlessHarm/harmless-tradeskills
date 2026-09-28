@@ -5,14 +5,17 @@ import { importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, ItemPicker, NumberInput, Panel } from './common';
+import { deleteConfirmText, recipeUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
+import { SelectAll, SelectionBar, useSelection } from './Selection';
 import { ImportBox } from './ItemsPage';
 
 const KINDS = ['craft', 'disenchant', 'convert'];
 
 export function RecipesPage() {
-  const { recipeRecords, mutate } = useStore();
+  const { recipeRecords, mutate, engine, workflows, deRules } = useStore();
   const [editing, setEditing] = useState<string | null>(null);
+  const sel = useSelection<string>();
   const [filter, setFilter] = useState('');
   const [bulk, setBulk] = useState(false);
 
@@ -22,6 +25,16 @@ export function RecipesPage() {
     .filter(({ rec }) => !f || rec.name.toLowerCase().includes(f) || rec.id.includes(f))
     .sort((a, b) => a.rec.name.localeCompare(b.rec.name));
   const editRecord = recipeRecords.find((r) => r.id === editing);
+
+  const remove = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const names = ids.map((id) => engine.recipes.get(id)?.name ?? id);
+    const usage = ids.flatMap((id) => recipeUsage({ engine, workflows, deRules }, id));
+    if (!confirm(deleteConfirmText('recipe', names, usage))) return;
+    mutate((repo) => ids.forEach((id) => repo.deleteRecipe(id)));
+    sel.setAll(ids, false);
+    if (editing !== null && ids.includes(editing)) setEditing(null);
+  };
 
   const createManual = () => {
     const id = mutate((repo) => {
@@ -56,6 +69,7 @@ export function RecipesPage() {
         }
       >
         <ImportBox defaultType="spell" />
+        <SelectionBar count={sel.selected.size} onDelete={() => remove([...sel.selected])} onClear={sel.clear} />
         <p className="small muted">
           Disenchanting needs no recipe here: add a Disenchant step to a workflow and the matching disenchant rule is used.
         </p>
@@ -63,6 +77,9 @@ export function RecipesPage() {
           <table className="table">
             <thead>
               <tr>
+                <th className="check">
+                  <SelectAll keys={rows.map(({ r }) => r.id)} sel={sel} />
+                </th>
                 <th>Recipe</th>
                 <th>Kind</th>
                 <th className="r">Cast</th>
@@ -74,7 +91,10 @@ export function RecipesPage() {
             </thead>
             <tbody>
               {rows.map(({ r, rec }) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={sel.has(r.id) ? 'selected' : ''}>
+                  <td className="check">
+                    <input type="checkbox" aria-label={`Select ${rec.name}`} checked={sel.has(r.id)} onChange={(e) => sel.toggle(r.id, e.target.checked)} />
+                  </td>
                   <td>
                     {r.spellId ? (
                       <a href={wowheadUrl('spell', r.spellId)} target="_blank" rel="noreferrer">
@@ -116,12 +136,15 @@ export function RecipesPage() {
                     <button className="link-btn" onClick={() => setEditing(editing === r.id ? null : r.id)}>
                       {editing === r.id ? 'close' : 'edit'}
                     </button>
+                    <button className="link-btn danger-link" onClick={() => remove([r.id])} aria-label={`Delete ${rec.name}`}>
+                      delete
+                    </button>
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
                     {recipeRecords.length ? 'No match.' : 'No recipes yet. Paste a Wowhead spell link above.'}
                   </td>
                 </tr>
@@ -130,14 +153,14 @@ export function RecipesPage() {
           </table>
         </div>
       </Panel>
-      {editRecord && <RecipeEditor key={editRecord.id} record={editRecord} onClose={() => setEditing(null)} />}
+      {editRecord && <RecipeEditor key={editRecord.id} record={editRecord} onDelete={() => remove([editRecord.id])} />}
     </div>
   );
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () => void }) {
+function RecipeEditor({ record, onDelete }: { record: RecipeRecord; onDelete: () => void }) {
   const { mutate, mutateAsync } = useStore();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -187,15 +210,7 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
               {busy ? 'Refreshing...' : 'Refresh from Wowhead'}
             </button>
           )}
-          <button
-            className="danger"
-            onClick={() => {
-              if (confirm(`Delete recipe "${rec.name}"? Workflows using it will show an error.`)) {
-                mutate((repo) => repo.deleteRecipe(record.id));
-                onClose();
-              }
-            }}
-          >
+          <button className="danger" onClick={onDelete}>
             Delete
           </button>
         </>

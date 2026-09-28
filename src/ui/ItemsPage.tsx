@@ -6,7 +6,9 @@ import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { parseWowheadRef, tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, Money, MoneyInput, NumberInput, Panel } from './common';
+import { deleteConfirmText, itemUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
+import { SelectAll, SelectionBar, useSelection } from './Selection';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 
 export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
@@ -54,8 +56,9 @@ export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
 }
 
 export function ItemsPage() {
-  const { itemRecords, mutate } = useStore();
+  const { itemRecords, mutate, engine, workflows, deRules } = useStore();
   const [filter, setFilter] = useState('');
+  const sel = useSelection<number>();
   const [editing, setEditing] = useState<number | null>(null);
   const [newId, setNewId] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
@@ -67,6 +70,17 @@ export function ItemsPage() {
     .filter(({ it }) => !f || it.name.toLowerCase().includes(f) || String(it.id) === f)
     .sort((a, b) => a.it.name.localeCompare(b.it.name));
   const editRecord = itemRecords.find((r) => r.id === editing);
+
+  const remove = (ids: number[]) => {
+    if (ids.length === 0) return;
+    const names = ids.map((id) => engine.items.get(id)?.name ?? `#${id}`);
+    const gone = new Set(ids);
+    const usage = ids.flatMap((id) => itemUsage({ engine, workflows, deRules }, id));
+    if (!confirm(deleteConfirmText('item', names, usage))) return;
+    mutate((repo) => ids.forEach((id) => repo.deleteItem(id)));
+    sel.setAll(ids, false);
+    if (editing !== null && gone.has(editing)) setEditing(null);
+  };
 
   return (
     <div className="stack">
@@ -81,10 +95,14 @@ export function ItemsPage() {
         }
       >
         <ImportBox defaultType="item" />
+        <SelectionBar count={sel.selected.size} onDelete={() => remove([...sel.selected])} onClear={sel.clear} />
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
+                <th className="check">
+                  <SelectAll keys={rows.map(({ r }) => r.id)} sel={sel} />
+                </th>
                 <th>Item</th>
                 <th className="r">iLvl</th>
                 <th>Type</th>
@@ -99,7 +117,10 @@ export function ItemsPage() {
             </thead>
             <tbody>
               {rows.map(({ r, it }) => (
-                <tr key={r.id}>
+                <tr key={r.id} className={sel.has(r.id) ? 'selected' : ''}>
+                  <td className="check">
+                    <input type="checkbox" aria-label={`Select ${it.name}`} checked={sel.has(r.id)} onChange={(e) => sel.toggle(r.id, e.target.checked)} />
+                  </td>
                   <td>
                     <ItemName id={r.id} link />
                     <span className="muted small"> #{r.id}</span>
@@ -131,12 +152,15 @@ export function ItemsPage() {
                     <button className="link-btn" onClick={() => setEditing(editing === r.id ? null : r.id)}>
                       {editing === r.id ? 'close' : 'edit'}
                     </button>
+                    <button className="link-btn danger-link" onClick={() => remove([r.id])} aria-label={`Delete ${it.name}`}>
+                      delete
+                    </button>
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="muted">
+                  <td colSpan={11} className="muted">
                     {itemRecords.length ? 'No match.' : 'No items yet. Import one above, or they get imported when a recipe needs them.'}
                   </td>
                 </tr>
@@ -161,7 +185,7 @@ export function ItemsPage() {
           </button>
         </div>
       </Panel>
-      {editRecord && <ItemEditor key={editRecord.id} record={editRecord} onClose={() => setEditing(null)} />}
+      {editRecord && <ItemEditor key={editRecord.id} record={editRecord} onDelete={() => remove([editRecord.id])} />}
     </div>
   );
 }
@@ -178,7 +202,7 @@ function SourceBadge({ record }: { record: ItemRecord }) {
 }
 
 /** Edit overrides per field. Imported values stay visible; clearing an override reverts to them (DEC-6). */
-function ItemEditor({ record, onClose }: { record: ItemRecord; onClose: () => void }) {
+function ItemEditor({ record, onDelete }: { record: ItemRecord; onDelete: () => void }) {
   const { mutate, mutateAsync } = useStore();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -245,15 +269,7 @@ function ItemEditor({ record, onClose }: { record: ItemRecord; onClose: () => vo
               </button>
             </>
           )}
-          <button
-            className="danger"
-            onClick={() => {
-              if (confirm('Delete this item? Recipes and workflows that use it will show it as unknown.')) {
-                mutate((repo) => repo.deleteItem(record.id));
-                onClose();
-              }
-            }}
-          >
+          <button className="danger" onClick={onDelete}>
             Delete
           </button>
         </>
