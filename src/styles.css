@@ -608,20 +608,6 @@ select option { background: var(--bg-2); }
   font-weight: 600;
 }
 
-/* Disenchant rules */
-.rules {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 10px;
-}
-.rule-card {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 10px 12px;
-  background: var(--bg-2);
-}
-
 .chips {
   display: flex;
   flex-wrap: wrap;

@@ -1,59 +1,201 @@
-import { useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { findDisenchantRule } from '../engine/disenchant';
 import { expectedQty } from '../engine/items';
 import { QUALITY_NAMES, type DisenchantRule, type Quality, type RecipeOutput } from '../engine/types';
 import { useStore } from '../state/store';
 import { fmtQty, ItemName, ItemPicker, NumberInput, Panel } from './common';
+import { RowActions } from './Selection';
+import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
 /** Poor and Common items cannot be disenchanted. */
 const MIN_DE_QUALITY = 2;
+const COLS = 6;
+type RuleSortKey = 'quality' | 'min' | 'max' | 'type';
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const qtyText = (o: RecipeOutput) => (o.minQty === o.maxQty ? String(o.minQty) : `${o.minQty}-${o.maxQty}`);
+/** Chances are shown as decimals: 75% is 0.75. */
+const chanceText = (c: number) => String(Math.round(c * 10000) / 10000);
 
 /** Manually maintained disenchant rules (REQ-3.1, DEC-2, DEC-7). */
 export function DisenchantPage() {
-  const { deRules, engine, mutate } = useStore();
-  const [checkCount, setCheckCount] = useState<number | null>(100);
+  const { deRules, mutate } = useStore();
+  const sort = useSort<RuleSortKey>('quality');
+  const [editing, setEditing] = useState<number | null>(null);
+  const [draft, setDraft] = useState<DisenchantRule | null>(null);
+  // An input's blur may update the draft in the same click as Save, so save reads the ref.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
-  const addRule = () =>
-    mutate((repo) => repo.saveDeRule({ id: 0, quality: 2, ilvlMin: 1, ilvlMax: 10, itemClass: 'armor', outputs: [], notes: '' }));
+  const stored = editing === null ? undefined : deRules.find((r) => r.id === editing);
+  const dirty = !!stored && !!draft && !same(stored, draft);
 
-  const matching = (rule: DisenchantRule) => [...engine.items.values()].filter((i) => findDisenchantRule(engine.deRules, i)?.id === rule.id);
+  const close = () => {
+    setEditing(null);
+    setDraft(null);
+  };
+  const open = (rule: DisenchantRule) => {
+    if (rule.id === editing) return;
+    if (dirty && !confirm('Discard your unsaved changes?')) return;
+    setEditing(rule.id);
+    setDraft(rule);
+  };
+  const save = () => {
+    if (draftRef.current) mutate((repo) => repo.saveDeRule(draftRef.current!));
+    close();
+  };
+  const update = (patch: Partial<DisenchantRule>) => {
+    if (!draftRef.current) return;
+    const next = { ...draftRef.current, ...patch };
+    draftRef.current = next;
+    setDraft(next);
+  };
+  const remove = (rule: DisenchantRule) => {
+    if (!confirm(`Delete the ${QUALITY_NAMES[rule.quality]} ${rule.itemClass} rule for item level ${rule.ilvlMin}-${rule.ilvlMax}?`)) return;
+    mutate((repo) => repo.deleteDeRule(rule.id));
+    if (editing === rule.id) close();
+  };
+  const addRule = () => {
+    if (dirty && !confirm('Discard your unsaved changes?')) return;
+    const rule: DisenchantRule = { id: 0, quality: 2, ilvlMin: 1, ilvlMax: 10, itemClass: 'armor', outputs: [], notes: '' };
+    const id = mutate((repo) => repo.saveDeRule(rule));
+    setEditing(id);
+    setDraft({ ...rule, id });
+  };
+
+  const rows = sortRows(
+    deRules,
+    sort,
+    (r, key): SortValue => {
+      switch (key) {
+        case 'quality':
+          return r.quality;
+        case 'min':
+          return r.ilvlMin;
+        case 'max':
+          return r.ilvlMax;
+        case 'type':
+          return r.itemClass;
+      }
+    },
+    // Ties: armor before weapons, then by level, as the rules are listed in game.
+    (r) => `${r.itemClass} ${String(r.ilvlMin).padStart(4, '0')}`,
+  );
 
   return (
     <div className="stack">
-      <Panel title="Disenchant rules" actions={<button onClick={addRule}>Add rule</button>}>
+      <Panel title={`Disenchant rules (${deRules.length})`} actions={<button onClick={addRule}>Add rule</button>}>
         <p className="small muted">
-          An item is disenchanted by the first rule that matches its quality, item level and armor or weapon type. Values are entered by hand; check them
-          against DE Tracker totals with the expected yield column.
+          An item is disenchanted by the first rule that matches its quality, item level and armor or weapon type. Each disenchant gives exactly one
+          result, picked by its chance. Check the values against DE Tracker totals with the expected yield in the editor.
         </p>
-        <label className="inline small">
-          Expected yield for
-          <NumberInput value={checkCount} min={1} step={1} onChange={setCheckCount} />
-          disenchants
-        </label>
-        <div className="rules">
-          {deRules.map((rule) => (
-            <RuleCard key={rule.id} rule={rule} checkCount={checkCount ?? 1} matchCount={matching(rule).length} />
-          ))}
-          {deRules.length === 0 && <p className="muted">No rules yet.</p>}
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <SortHeader label="Quality" k="quality" sort={sort} />
+                <SortHeader label="Min iLvl" k="min" sort={sort} className="r" />
+                <SortHeader label="Max iLvl" k="max" sort={sort} className="r" />
+                <SortHeader label="Type" k="type" sort={sort} />
+                <th>Results</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((rule) => (
+                <Fragment key={rule.id}>
+                  <tr className={editing === rule.id ? 'editing' : ''}>
+                    <td className={`q${rule.quality}`}>{QUALITY_NAMES[rule.quality]}</td>
+                    <td className="r">{rule.ilvlMin}</td>
+                    <td className="r">{rule.ilvlMax}</td>
+                    <td className="small">{rule.itemClass === 'armor' ? 'Armor' : 'Weapon'}</td>
+                    <td className="small">
+                      {rule.outputs.map((o, k) => (
+                        <div key={k}>
+                          {qtyText(o)} <ItemName id={o.itemId} /> <span className="muted">{chanceText(o.chance)}</span>
+                        </div>
+                      ))}
+                      {rule.outputs.length === 0 && <span className="warn">none</span>}
+                    </td>
+                    <td className="actions">
+                      <RowActions
+                        name={`${QUALITY_NAMES[rule.quality]} ${rule.itemClass} ${rule.ilvlMin}-${rule.ilvlMax}`}
+                        editing={editing === rule.id}
+                        dirty={editing === rule.id && dirty}
+                        onEdit={() => open(rule)}
+                        onSave={save}
+                        onDelete={() => remove(rule)}
+                      />
+                    </td>
+                  </tr>
+                  {editing === rule.id && draft && (
+                    <tr className="editor-row">
+                      <td colSpan={COLS}>
+                        <RuleEditor rule={draft} dirty={dirty} update={update} onSave={save} onCancel={close} onDelete={() => remove(rule)} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={COLS} className="muted">
+                    No rules yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </Panel>
     </div>
   );
 }
 
-function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; checkCount: number; matchCount: number }) {
-  const { mutate } = useStore();
+function RuleEditor({
+  rule,
+  dirty,
+  update,
+  onSave,
+  onCancel,
+  onDelete,
+}: {
+  rule: DisenchantRule;
+  dirty: boolean;
+  update: (patch: Partial<DisenchantRule>) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const { engine } = useStore();
+  const [checkCount, setCheckCount] = useState<number | null>(100);
   const [newItem, setNewItem] = useState<number | null>(null);
-  const save = (patch: Partial<DisenchantRule>) => mutate((repo) => repo.saveDeRule({ ...rule, ...patch }));
-  const setOutput = (i: number, patch: Partial<RecipeOutput>) => save({ outputs: rule.outputs.map((o, k) => (k === i ? { ...o, ...patch } : o)) });
+  const count = checkCount ?? 1;
+  const setOutput = (i: number, patch: Partial<RecipeOutput>) => update({ outputs: rule.outputs.map((o, k) => (k === i ? { ...o, ...patch } : o)) });
   const chanceSum = rule.outputs.reduce((s, o) => s + o.chance, 0);
+  // Matches use the saved rules, so this count reflects the rule as stored until you save.
+  const matchCount = [...engine.items.values()].filter((i) => findDisenchantRule(engine.deRules, i)?.id === rule.id).length;
 
   return (
-    <div className="rule-card">
+    <Panel
+      title={`Edit ${QUALITY_NAMES[rule.quality]} ${rule.itemClass} rule`}
+      actions={
+        <>
+          <button className="danger" onClick={onDelete}>
+            Delete
+          </button>
+          {dirty && <span className="unsaved">Unsaved changes</span>}
+          <button onClick={onCancel}>{dirty ? 'Cancel' : 'Close'}</button>
+          <button className="primary" onClick={onSave}>
+            Save
+          </button>
+        </>
+      }
+    >
       <div className="field-row">
         <label>
           Quality
-          <select className={`q${rule.quality}`} value={rule.quality} onChange={(e) => save({ quality: Number(e.target.value) as Quality })}>
+          <select className={`q${rule.quality}`} value={rule.quality} onChange={(e) => update({ quality: Number(e.target.value) as Quality })}>
             {QUALITY_NAMES.map((q, i) =>
               i >= MIN_DE_QUALITY || i === rule.quality ? (
                 <option key={q} value={i} className={`q${i}`}>
@@ -64,41 +206,40 @@ function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; chec
           </select>
         </label>
         <label>
-          Item level from
-          <NumberInput value={rule.ilvlMin} min={0} step={1} onChange={(v) => save({ ilvlMin: v ?? 0 })} />
+          Min iLvl
+          <NumberInput value={rule.ilvlMin} min={0} step={1} onChange={(v) => update({ ilvlMin: v ?? 0 })} />
         </label>
         <label>
-          to
-          <NumberInput value={rule.ilvlMax} min={0} step={1} onChange={(v) => save({ ilvlMax: v ?? 0 })} />
+          Max iLvl
+          <NumberInput value={rule.ilvlMax} min={0} step={1} onChange={(v) => update({ ilvlMax: v ?? 0 })} />
         </label>
         <label>
           Type
-          <select value={rule.itemClass} onChange={(e) => save({ itemClass: e.target.value as DisenchantRule['itemClass'] })}>
+          <select value={rule.itemClass} onChange={(e) => update({ itemClass: e.target.value as DisenchantRule['itemClass'] })}>
             <option value="armor">Armor</option>
             <option value="weapon">Weapon</option>
           </select>
         </label>
         <label className="grow">
           Notes
-          <input value={rule.notes} onChange={(e) => save({ notes: e.target.value })} />
+          <input value={rule.notes} onChange={(e) => update({ notes: e.target.value })} />
         </label>
-        <button
-          className="danger"
-          onClick={() => {
-            if (confirm('Delete this rule?')) mutate((repo) => repo.deleteDeRule(rule.id));
-          }}
-        >
-          Delete
-        </button>
       </div>
+
+      <h3>Results</h3>
+      <label className="inline small">
+        Expected yield for
+        <NumberInput value={checkCount} min={1} step={1} onChange={setCheckCount} />
+        disenchants
+      </label>
       <table className="form-table">
         <thead>
           <tr>
-            <th>Result</th>
-            <th>Chance %</th>
+            <th>Item</th>
+            <th>Chance</th>
             <th>Min</th>
             <th>Max</th>
-            <th className="r">Per {checkCount} DEs</th>
+            <th className="r">Per {count} DEs</th>
             <th />
           </tr>
         </thead>
@@ -106,10 +247,10 @@ function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; chec
           {rule.outputs.map((o, i) => (
             <tr key={i}>
               <td>
-                <ItemName id={o.itemId} />
+                <ItemPicker value={o.itemId} onChange={(id) => id !== null && setOutput(i, { itemId: id })} />
               </td>
               <td>
-                <NumberInput value={Math.round(o.chance * 10000) / 100} min={0} step={0.1} onChange={(v) => setOutput(i, { chance: Math.min(1, Math.max(0, (v ?? 0) / 100)) })} />
+                <NumberInput value={Math.round(o.chance * 10000) / 10000} min={0} step={0.01} onChange={(v) => setOutput(i, { chance: Math.min(1, Math.max(0, v ?? 0)) })} />
               </td>
               <td>
                 <NumberInput value={o.minQty} min={0} step={1} onChange={(v) => setOutput(i, { minQty: v ?? 1, maxQty: Math.max(v ?? 1, o.maxQty) })} />
@@ -117,9 +258,9 @@ function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; chec
               <td>
                 <NumberInput value={o.maxQty} min={0} step={1} onChange={(v) => setOutput(i, { maxQty: Math.max(v ?? 1, o.minQty) })} />
               </td>
-              <td className="r">{fmtQty(Math.round(expectedQty(o) * checkCount * 10) / 10)}</td>
+              <td className="r">{fmtQty(Math.round(expectedQty(o) * count * 10) / 10)}</td>
               <td>
-                <button className="icon-btn" onClick={() => save({ outputs: rule.outputs.filter((_, k) => k !== i) })} aria-label="Remove result">
+                <button className="icon-btn" onClick={() => update({ outputs: rule.outputs.filter((_, k) => k !== i) })} aria-label="Remove result">
                   ×
                 </button>
               </td>
@@ -132,7 +273,7 @@ function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; chec
         <button
           disabled={newItem === null}
           onClick={() => {
-            save({ outputs: [...rule.outputs, { itemId: newItem!, chance: 1, minQty: 1, maxQty: 1 }] });
+            update({ outputs: [...rule.outputs, { itemId: newItem!, chance: rule.outputs.length ? Math.max(0, 1 - chanceSum) : 1, minQty: 1, maxQty: 1 }] });
             setNewItem(null);
           }}
         >
@@ -140,9 +281,9 @@ function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; chec
         </button>
         <span className="small muted">
           {matchCount} catalog item{matchCount === 1 ? '' : 's'} match
-          {Math.abs(chanceSum - 1) > 0.0001 && rule.outputs.length > 0 && <span className="warn">, chances add up to {Math.round(chanceSum * 1000) / 10}%</span>}
+          {Math.abs(chanceSum - 1) > 0.0001 && rule.outputs.length > 0 && <span className="warn">, chances add up to {chanceText(chanceSum)} instead of 1</span>}
         </span>
       </div>
-    </div>
+    </Panel>
   );
 }
