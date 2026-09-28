@@ -1,4 +1,4 @@
-import { netOnSale } from './ah';
+import { deposit, netOnSale } from './ah';
 import { deriveDisenchantRecipe } from './disenchant';
 import { expectedQty } from './items';
 import { price, type PriceContext } from './prices';
@@ -36,6 +36,8 @@ export interface ExternalInput {
   source: BuySource;
   unitPrice: Copper | null;
   costPerUnit: Copper;
+  /** Whole items to buy for one batch. */
+  qtyPerBatch: number;
 }
 
 export interface TerminalOutput {
@@ -54,6 +56,8 @@ export interface MissingPrice {
 
 export interface SimulationResult {
   batchSize: number;
+  /** No step has chance-based or ranged outputs, so one exact pass replaces the Monte Carlo. */
+  deterministic: boolean;
   runs: number;
   p5: Copper;
   p50: Copper;
@@ -82,6 +86,10 @@ export interface WorkflowAnalysis {
   batchSize: number;
   batchTimeSec: number;
   batchProfit: Copper;
+  /** Gold needed up front to buy every input for one batch. */
+  batchInvestment: Copper;
+  /** Deposits for posting a batch's AH sales, listed one item at a time. Refunded on sale. */
+  batchDeposits: Copper;
   goldPerHourCopper: Copper;
   simulation: SimulationResult | null;
 }
@@ -98,6 +106,21 @@ export function resolveStep(data: EngineData, step: WorkflowStep): Recipe | null
 export function describeStep(data: EngineData, step: WorkflowStep): string {
   if (step.type === 'recipe') return data.recipes.get(step.recipeId)?.name ?? `Missing recipe ${step.recipeId}`;
   return `Disenchant ${data.items.get(step.itemId)?.name ?? `item #${step.itemId}`}`;
+}
+
+/** Known recipes that make an item, by name. */
+export function producersOf(data: EngineData, itemId: number): Recipe[] {
+  return [...data.recipes.values()]
+    .filter((r) => r.outputs.some((o) => o.itemId === itemId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Insert a step right before the first step that uses the item, or at the top if none does. */
+export function insertBeforeConsumer(data: EngineData, steps: WorkflowStep[], itemId: number, step: WorkflowStep): WorkflowStep[] {
+  const at = steps.findIndex((s) => resolveStep(data, s)?.inputs.some((i) => i.itemId === itemId));
+  const next = [...steps];
+  next.splice(at < 0 ? 0 : at, 0, step);
+  return next;
 }
 
 /**
@@ -144,8 +167,18 @@ const producedBy = (r: Recipe, itemId: number) =>
 const consumedBy = (r: Recipe, itemId: number) =>
   r.inputs.filter((i) => i.itemId === itemId).reduce((sum, i) => sum + i.qty, 0);
 
+/** True when an output can vary between runs: a chance below 1, a quantity range, or a pick among several. */
+export function hasChanceOutputs(recipes: Recipe[]): boolean {
+  return recipes.some(
+    (r) =>
+      (r.outputMode === 'exclusive' && r.outputs.length > 1) ||
+      r.outputs.some((o) => o.chance < 1 || o.minQty !== o.maxQty),
+  );
+}
+
 /**
- * Solve runs per unit (REQ-6.3). One equation fixes production of the unit item at 1; every
+ * Solve runs per unit (REQ-6.3). One equation fixes the unit item at 1: its production, or, when
+ * no step makes it (a bought base item such as cloth), its consumption. Every
  * intermediate item is balanced: what earlier steps make is what later steps use.
  */
 function solveRuns(
@@ -157,8 +190,9 @@ function solveRuns(
   const rows: number[][] = [];
   const rhs: number[] = [];
 
-  const unitRow = recipes.map((r) => producedBy(r, unitItemId));
-  if (unitRow.every((x) => Math.abs(x) < EPS)) return { error: 'No step produces the unit item.' };
+  let unitRow = recipes.map((r) => producedBy(r, unitItemId));
+  if (unitRow.every((x) => Math.abs(x) < EPS)) unitRow = recipes.map((r) => consumedBy(r, unitItemId));
+  if (unitRow.every((x) => Math.abs(x) < EPS)) return { error: 'No step makes or uses the unit item.' };
   rows.push(unitRow);
   rhs.push(1);
 
@@ -262,6 +296,8 @@ function emptyAnalysis(errors: string[], unitItemId: number | null = null): Work
     batchSize: 0,
     batchTimeSec: 0,
     batchProfit: 0,
+    batchInvestment: 0,
+    batchDeposits: 0,
     goldPerHourCopper: 0,
     simulation: null,
   };
@@ -317,13 +353,21 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
     if (!missing.some((m) => m.itemId === itemId && m.what === what)) missing.push({ itemId, what });
   };
 
+  const batchSize = Math.max(1, wf.batchSize ?? cfg.defaultBatchSize);
   const externalInputs: ExternalInput[] = [];
   for (const [itemId, qty] of bought) {
     if (qty < EPS) continue;
     const source = buySourceFor(data, wf, itemId);
     const unitPrice = buyPrice(data, itemId, source);
     if (unitPrice === null) noteMissing(itemId, source === 'vendor' ? 'vendor buy price' : 'ah price');
-    externalInputs.push({ itemId, qtyPerUnit: qty, source, unitPrice, costPerUnit: (unitPrice ?? 0) * qty });
+    externalInputs.push({
+      itemId,
+      qtyPerUnit: qty,
+      source,
+      unitPrice,
+      costPerUnit: (unitPrice ?? 0) * qty,
+      qtyPerBatch: Math.ceil(qty * batchSize - 1e-6),
+    });
   }
 
   const terminalOutputs: TerminalOutput[] = [];
@@ -347,7 +391,13 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
   const revenuePerUnit = terminalOutputs.reduce((s, x) => s + x.valuePerUnit, 0);
   const profitPerUnit = revenuePerUnit - costPerUnit;
   const timePerUnitSec = steps.reduce((s, x) => s + x.secondsPerUnit, 0);
-  const batchSize = Math.max(1, wf.batchSize ?? cfg.defaultBatchSize);
+  const batchInvestment = externalInputs.reduce((s, x) => s + x.qtyPerBatch * (x.unitPrice ?? 0), 0);
+  const batchDeposits = terminalOutputs
+    .filter((x) => x.disposition === 'ah')
+    .reduce((s, x) => {
+      const each = deposit(cfg, data.items.get(x.itemId)?.vendorSell ?? null, 1, wf.ahDuration, wf.ahType);
+      return s + Math.ceil(x.qtyPerUnit * batchSize - 1e-6) * each;
+    }, 0);
   const batchTimeSec = batchSize * timePerUnitSec + cfg.perBatchOverheadSec;
   const batchProfit = profitPerUnit * batchSize;
   const goldPerHourCopper = batchTimeSec > 0 ? (batchProfit / batchTimeSec) * 3600 : 0;
@@ -374,6 +424,8 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
     batchSize,
     batchTimeSec,
     batchProfit,
+    batchInvestment,
+    batchDeposits,
     goldPerHourCopper,
     simulation: null,
   };
@@ -385,7 +437,8 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
 }
 
 /**
- * Monte Carlo of a batch of N units with whole runs and whole items (REQ-6.5, DEC-10).
+ * Monte Carlo of a batch of N units with whole runs and whole items (REQ-6.5, DEC-10). Without
+ * chance-based outputs every pass is identical, so a single exact pass is run instead.
  * Steps that only use bought inputs run round(runsPerUnit * N) times. Steps fed by earlier
  * steps use as much of the linked inventory as they can. Unused intermediates are leftovers.
  */
@@ -399,7 +452,8 @@ function simulateBatch(
   seed: number,
 ): SimulationResult {
   const N = analysis.batchSize;
-  const iterations = Math.max(100, data.config.simulationRuns);
+  const deterministic = !hasChanceOutputs(recipes);
+  const iterations = deterministic ? 1 : Math.max(100, data.config.simulationRuns);
   const rng = mulberry32(seed);
 
   const buyCost = new Map<number, number>();
@@ -471,6 +525,7 @@ function simulateBatch(
   worst.sort((a, b) => a - b);
   return {
     batchSize: N,
+    deterministic,
     runs: iterations,
     p5: percentile(profits, 5),
     p50: percentile(profits, 50),

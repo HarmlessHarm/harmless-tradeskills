@@ -4,7 +4,7 @@ import { deShuffle, engineData, IDS } from '../test/fixtures';
 import { deposit, flip, netOnSale } from './ah';
 import { deriveDisenchantRecipe, findDisenchantRule } from './disenchant';
 import { formatMoney, parseMoney } from './money';
-import { analyzeWorkflow } from './workflow';
+import { analyzeWorkflow, insertBeforeConsumer, producersOf } from './workflow';
 
 describe('money', () => {
   it('formats copper as g/s/c', () => {
@@ -125,6 +125,16 @@ describe('workflow: DE shuffle', () => {
     expect(a.goldPerHourCopper).toBeCloseTo((a.profitPerUnit * 20 * 3600) / (20 * perUnit + 60));
   });
 
+  it('computes the gold needed to buy a batch', () => {
+    // 80 linen, 20 thread, 24 seeds, 24 vials, 3 wood; oil and wand go to a vendor, so no deposits.
+    expect(a.batchInvestment).toBe(80 * 15 + 20 * 10 + 24 * 90 + 24 * 4 + 3 * 38);
+    expect(a.batchDeposits).toBe(0);
+    const d = engineData();
+    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahPessimistic: null, observedAt: 0 });
+    const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
+    expect(r.batchDeposits).toBe(24 * deposit(d.config, 400, 1, '8h', 'faction'));
+  });
+
   it('simulates a batch of 20 with an ordered percentile range', () => {
     const sim = a.simulation!;
     expect(sim.batchSize).toBe(20);
@@ -136,6 +146,7 @@ describe('workflow: DE shuffle', () => {
     expect(sim.mean).toBeGreaterThan(a.batchProfit - 0.15 * 20 * 1100);
     expect(sim.leftovers.some((l) => l.itemId === IDS.lme)).toBe(true);
     expect(sim.worstCase).toBe(sim.p5); // no pessimistic prices set
+    expect(sim.deterministic).toBe(false);
   });
 
   it('is deterministic for a seed', () => {
@@ -161,6 +172,14 @@ describe('workflow: DE shuffle', () => {
     expect(r.steps[1].runsPerUnit).toBeCloseTo(0.5);
   });
 
+  it('accepts a bought base item as the unit', () => {
+    const r = analyzeWorkflow(data, { ...deShuffle, unitItemId: IDS.linen });
+    expect(r.errors).toEqual([]);
+    expect(r.steps[0].runsPerUnit).toBeCloseTo(0.5);
+    expect(r.steps[1].runsPerUnit).toBeCloseTo(0.25);
+    expect(r.externalInputs.find((x) => x.itemId === IDS.linen)!.qtyPerUnit).toBeCloseTo(1);
+  });
+
   it('reports missing prices', () => {
     const d = engineData({ prices: new Map() });
     const r = analyzeWorkflow(d, deShuffle);
@@ -179,5 +198,47 @@ describe('workflow: DE shuffle', () => {
   it('reports a missing disenchant rule', () => {
     const r = analyzeWorkflow(engineData({ deRules: [] }), deShuffle);
     expect(r.errors[0]).toMatch(/no disenchant rule/);
+  });
+});
+
+describe('workflow: no chance-based outputs', () => {
+  const data = engineData();
+  const wf = { ...deShuffle, steps: deShuffle.steps.slice(0, 2), unitItemId: IDS.gloves };
+  const a = analyzeWorkflow(data, wf);
+
+  it('replaces the simulation with one exact batch', () => {
+    const sim = a.simulation!;
+    expect(sim.deterministic).toBe(true);
+    expect(sim.runs).toBe(1);
+    expect(sim.p5).toBe(sim.p95);
+    expect(sim.p50).toBeCloseTo(a.batchProfit);
+  });
+});
+
+describe('workflow: adding a step for a bought input', () => {
+  const data = engineData();
+  const bolt = { type: 'recipe', recipeId: 'spell:2963' } as const;
+
+  it('finds the recipes that make an item', () => {
+    expect(producersOf(data, IDS.bolt).map((r) => r.id)).toEqual(['spell:2963']);
+    expect(producersOf(data, IDS.linen)).toEqual([]);
+  });
+
+  it('inserts the step before the first step that uses the item', () => {
+    const steps = deShuffle.steps.slice(1);
+    const next = insertBeforeConsumer(data, steps, IDS.bolt, bolt);
+    expect(next).toEqual([bolt, ...steps]);
+    const wf = { ...deShuffle, steps: next };
+    expect(analyzeWorkflow(data, wf).externalInputs.map((x) => x.itemId)).toContain(IDS.linen);
+  });
+
+  it('inserts mid-list when the consumer is not the first step', () => {
+    const steps = [deShuffle.steps[0], deShuffle.steps[4]];
+    const wood = { type: 'recipe', recipeId: 'local:wood' } as const;
+    expect(insertBeforeConsumer(data, steps, IDS.wood, wood)).toEqual([steps[0], wood, steps[1]]);
+  });
+
+  it('falls back to the top when no step uses the item', () => {
+    expect(insertBeforeConsumer(data, deShuffle.steps.slice(3), IDS.bolt, bolt)[0]).toEqual(bolt);
   });
 });

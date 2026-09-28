@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react';
 import { formatMoney, parseMoney, splitMoney } from '../engine/money';
 import type { Copper, Item, PriceObservation } from '../engine/types';
 import { useStore } from '../state/store';
@@ -150,6 +150,124 @@ export function ItemName({ id, link = false }: { id: number; link?: boolean }) {
 }
 
 /**
+ * Text input with a styled result list below it. Arrow keys move through the results, Enter or a
+ * click picks one, Escape closes the list. Enter with nothing to pick calls `onCommit`.
+ */
+export function Combo<T>({
+  text,
+  onText,
+  options,
+  optionKey,
+  renderOption,
+  onPick,
+  onCommit,
+  onFocus,
+  placeholder,
+  disabled,
+  className = '',
+  empty = 'No matches.',
+}: {
+  text: string;
+  onText: (t: string) => void;
+  options: T[];
+  optionKey: (o: T) => string | number;
+  renderOption: (o: T) => ReactNode;
+  onPick: (o: T) => void;
+  /** Called on blur and on Enter when there is nothing to pick. */
+  onCommit?: () => void;
+  onFocus?: (e: FocusEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  empty?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
+  const listId = useId();
+  const current = Math.min(active, options.length - 1);
+
+  const move = (d: number) => {
+    const next = Math.max(0, Math.min(options.length - 1, current + d));
+    setActive(next);
+    listRef.current?.children[next]?.scrollIntoView({ block: 'nearest' });
+  };
+  const pick = (o: T) => {
+    onPick(o);
+    setOpen(false);
+    setActive(0);
+  };
+
+  return (
+    <div className={`combo ${className}`}>
+      <input
+        className="combo-input"
+        value={text}
+        placeholder={placeholder}
+        disabled={disabled}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        onChange={(e) => {
+          onText(e.target.value);
+          setActive(0);
+          setOpen(true);
+        }}
+        onFocus={(e) => {
+          setOpen(true);
+          onFocus?.(e);
+        }}
+        onBlur={() => {
+          setOpen(false);
+          onCommit?.();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            if (!open) setOpen(true);
+            else move(1);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            move(-1);
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (open && options[current] !== undefined) pick(options[current]);
+            else onCommit?.();
+          } else if (e.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
+      />
+      {open && (
+        <ul className="combo-list" role="listbox" id={listId} ref={listRef}>
+          {options.length === 0 && <li className="combo-empty muted small">{empty}</li>}
+          {options.map((o, i) => (
+            <li
+              key={optionKey(o)}
+              role="option"
+              aria-selected={i === current}
+              className={i === current ? 'on' : ''}
+              onMouseEnter={() => setActive(i)}
+              // mousedown, not click: it fires before the input's blur closes the list.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(o);
+              }}
+            >
+              {renderOption(o)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const ITEM_PICKER_LIMIT = 50;
+const NONE: number[] = [];
+
+/**
  * Pick an item from the catalog by name, or type an ID (a missing ID is imported on demand).
  */
 export function ItemPicker({
@@ -157,14 +275,18 @@ export function ItemPicker({
   onChange,
   filter,
   placeholder = 'Item name or ID',
+  preferred = NONE,
+  preferredLabel,
 }: {
   value: number | null;
   onChange: (id: number | null) => void;
   filter?: (item: Item) => boolean;
   placeholder?: string;
+  /** Items listed first, in this order, with `preferredLabel` as their hint. */
+  preferred?: number[];
+  preferredLabel?: string;
 }) {
   const { engine, mutateAsync } = useStore();
-  const listId = useId();
   const label = (id: number | null) => {
     if (id === null) return '';
     const it = engine.items.get(id);
@@ -172,36 +294,58 @@ export function ItemPicker({
   };
   const [text, setText] = useState(label(value));
   useEffect(() => setText(label(value)), [value, engine.items]); // eslint-disable-line react-hooks/exhaustive-deps
-  const options = [...engine.items.values()].filter((i) => !filter || filter(i)).sort((a, b) => a.name.localeCompare(b.name));
+
+  const typedId = /^#?(\d+)$/.exec(text.trim());
+  const options = useMemo(() => {
+    const rank = (id: number) => {
+      const i = preferred.indexOf(id);
+      return i < 0 ? preferred.length : i;
+    };
+    // The box still shows the current pick: list everything, so the list is useful on focus.
+    const showAll = text === label(value);
+    const terms = showAll ? [] : text.toLowerCase().split(/\s+/).filter(Boolean);
+    return [...engine.items.values()]
+      .filter((i) => !filter || filter(i))
+      .filter((i) => (typedId && !showAll ? i.id === Number(typedId[1]) : terms.every((t) => `${i.name.toLowerCase()} #${i.id}`.includes(t))))
+      .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name))
+      .slice(0, ITEM_PICKER_LIMIT);
+  }, [engine.items, filter, preferred, text, value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const choose = (id: number | null) => {
+    if (id !== value) onChange(id);
+    setText(label(id));
+    // First reference to an unknown ID imports it (REQ-1.2). Failures leave an import button on the name.
+    if (id !== null && !engine.items.has(id)) void mutateAsync((repo) => importItem(repo, id)).catch(() => {});
+  };
   const commit = () => {
     const t = text.trim();
     if (!t) return value !== null && onChange(null);
     const idMatch = /#?(\d+)\s*$/.exec(t);
-    let id: number | null = idMatch ? Number(idMatch[1]) : null;
-    if (id === null) id = options.find((o) => o.name.toLowerCase() === t.toLowerCase())?.id ?? null;
+    const id = idMatch ? Number(idMatch[1]) : (options.find((o) => o.name.toLowerCase() === t.toLowerCase())?.id ?? null);
     if (id === null) return setText(label(value));
-    if (id !== value) onChange(id);
-    setText(label(id));
-    // First reference to an unknown ID imports it (REQ-1.2). Failures leave an import button on the name.
-    if (!engine.items.has(id)) void mutateAsync((repo) => importItem(repo, id!)).catch(() => {});
+    choose(id);
   };
+
   return (
-    <>
-      <input
-        className="item-picker"
-        list={listId}
-        value={text}
-        placeholder={placeholder}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-      />
-      <datalist id={listId}>
-        {options.map((o) => (
-          <option key={o.id} value={`${o.name} #${o.id}`} />
-        ))}
-      </datalist>
-    </>
+    <Combo
+      className="item-picker"
+      text={text}
+      onText={setText}
+      options={options}
+      optionKey={(i) => i.id}
+      onPick={(i) => choose(i.id)}
+      onCommit={commit}
+      onFocus={(e) => e.target.select()}
+      placeholder={placeholder}
+      empty={typedId ? `Press Enter to import item #${typedId[1]}` : 'No item matches. Type an item ID to import it.'}
+      renderOption={(i) => (
+        <span className="combo-name">
+          <ItemIcon item={i} />
+          <span className={`q${i.quality}`}>{i.name}</span> <span className="muted small">#{i.id}</span>
+          {preferredLabel && preferred.includes(i.id) && <span className="combo-tag small">{preferredLabel}</span>}
+        </span>
+      )}
+    />
   );
 }
 

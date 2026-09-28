@@ -1,11 +1,21 @@
 import { useMemo, useState } from 'react';
 import { findDisenchantRule } from '../engine/disenchant';
-import type { Workflow, WorkflowStep } from '../engine/types';
-import { analyzeWorkflow, buySourceFor, describeStep, dispositionFor, resolveStep, type WorkflowAnalysis } from '../engine/workflow';
+import type { Item, Recipe, Workflow, WorkflowStep } from '../engine/types';
+import {
+  analyzeWorkflow,
+  describeStep,
+  dispositionFor,
+  insertBeforeConsumer,
+  producersOf,
+  resolveStep,
+  type ExternalInput,
+  type WorkflowAnalysis,
+} from '../engine/workflow';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
-import { errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, NumberInput, Panel, Segmented } from './common';
+import { Combo, errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, NumberInput, Panel, Segmented } from './common';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
+import { searchRecipes } from './recipeSearch';
 
 const QUICKSTART = {
   name: 'DE shuffle',
@@ -148,7 +158,10 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
   const save = (patch: Partial<Workflow>) => mutate((repo) => repo.saveWorkflow({ ...wf, ...patch, updatedAt: Date.now() }));
 
   const resolved = wf.steps.map((s) => resolveStep(engine, s));
-  const unitOptions = [...new Set(resolved.flatMap((r) => r?.outputs.map((o) => o.itemId) ?? []))];
+  const madeIds = new Set(resolved.flatMap((r) => r?.outputs.map((o) => o.itemId) ?? []));
+  const baseIds = new Set(resolved.flatMap((r) => r?.inputs.map((i) => i.itemId) ?? []).filter((id) => !madeIds.has(id)));
+  const itemLabel = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
+  const byName = (a: number, b: number) => itemLabel(a).localeCompare(itemLabel(b));
 
   const moveStep = (i: number, d: -1 | 1) => {
     const steps = [...wf.steps];
@@ -183,11 +196,22 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
                 Default
                 {analysis.unitItemId && !wf.unitItemId ? ` (${engine.items.get(analysis.unitItemId)?.name ?? `#${analysis.unitItemId}`})` : ''}
               </option>
-              {unitOptions.map((id) => (
-                <option key={id} value={id}>
-                  {engine.items.get(id)?.name ?? `#${id}`}
-                </option>
-              ))}
+              <optgroup label="Made">
+                {[...madeIds].sort(byName).map((id) => (
+                  <option key={id} value={id}>
+                    {itemLabel(id)}
+                  </option>
+                ))}
+              </optgroup>
+              {baseIds.size > 0 && (
+                <optgroup label="Base materials">
+                  {[...baseIds].sort(byName).map((id) => (
+                    <option key={id} value={id}>
+                      {itemLabel(id)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <label>
@@ -258,56 +282,24 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
             );
           })}
         </ol>
-        <AddStep onAdd={(step) => save({ steps: [...wf.steps, step] })} />
+        <AddStep
+          onAdd={(step) => save({ steps: [...wf.steps, step] })}
+          outputs={analysis.terminalOutputs.map((x) => x.itemId)}
+        />
       </Panel>
 
       {analysis.ok && (
         <div className="grid2">
-          <Panel title="Buy (per unit)">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th className="r">Qty</th>
-                  <th>From</th>
-                  <th>Price</th>
-                  <th className="r">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analysis.externalInputs.map((x) => (
-                  <tr key={x.itemId}>
-                    <td>
-                      <ItemName id={x.itemId} />
-                    </td>
-                    <td className="r">{round3(x.qtyPerUnit)}</td>
-                    <td>
-                      <Segmented
-                        value={buySourceFor(engine, wf, x.itemId)}
-                        options={[
-                          { value: 'ah', label: 'AH' },
-                          { value: 'vendor', label: 'Vendor' },
-                        ]}
-                        onChange={(v) => save({ buyMap: { ...wf.buyMap, [x.itemId]: v } })}
-                      />
-                    </td>
-                    <td>
-                      {x.source === 'ah' ? (
-                        <div className="price-cell">
-                          <AhPriceCell itemId={x.itemId} />
-                          <AhPriceAge itemId={x.itemId} />
-                        </div>
-                      ) : (
-                        <VendorBuyCell itemId={x.itemId} />
-                      )}
-                    </td>
-                    <td className="r">
-                      <Money value={x.costPerUnit} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <Panel title="Buy">
+            {(['ah', 'vendor'] as const).map((source) => (
+              <BuySection
+                key={source}
+                source={source}
+                inputs={analysis.externalInputs.filter((x) => x.source === source)}
+                onMove={(itemId) => save({ buyMap: { ...wf.buyMap, [itemId]: source === 'ah' ? 'vendor' : 'ah' } })}
+                onMake={(itemId, recipeId) => save({ steps: insertBeforeConsumer(engine, wf.steps, itemId, { type: 'recipe', recipeId }) })}
+              />
+            ))}
           </Panel>
           <Panel title="Sell (per unit)">
             <table className="table">
@@ -371,6 +363,127 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
   );
 }
 
+function BuySection({
+  source,
+  inputs,
+  onMove,
+  onMake,
+}: {
+  source: 'ah' | 'vendor';
+  inputs: ExternalInput[];
+  onMove: (itemId: number) => void;
+  onMake: (itemId: number, recipeId: string) => void;
+}) {
+  const total = inputs.reduce((sum, x) => sum + x.qtyPerBatch * (x.unitPrice ?? 0), 0);
+  return (
+    <section className="buy-section">
+      <h3 className="buy-section-head">
+        <span>{source === 'ah' ? 'Auction House' : 'Vendor'}</span>
+        <span title="Cost of the whole batch from this source">
+          <Money value={total} /> <span className="muted">/ batch</span>
+        </span>
+      </h3>
+      {inputs.length === 0 ? (
+        <p className="small muted">Nothing to buy here.</p>
+      ) : (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th className="r">Per unit</th>
+              <th className="r" title="Quantity for the whole batch, rounded up">
+                Batch
+              </th>
+              <th>Price</th>
+              <th className="r">Cost / unit</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {inputs.map((x) => (
+              <tr key={x.itemId}>
+                <td>
+                  <ItemName id={x.itemId} />
+                </td>
+                <td className="r">{round3(x.qtyPerUnit)}</td>
+                <td className="r">{fmtQty(x.qtyPerBatch)}</td>
+                <td>
+                  {source === 'ah' ? (
+                    <div className="price-cell">
+                      <AhPriceCell itemId={x.itemId} />
+                      <AhPriceAge itemId={x.itemId} />
+                    </div>
+                  ) : (
+                    <VendorBuyCell itemId={x.itemId} />
+                  )}
+                </td>
+                <td className="r">
+                  <Money value={x.costPerUnit} />
+                </td>
+                <td className="r nowrap">
+                  <MakeButton itemId={x.itemId} onPick={(recipeId) => onMake(x.itemId, recipeId)} />{' '}
+                  <button
+                    className="icon-btn"
+                    onClick={() => onMove(x.itemId)}
+                    title={`Buy from ${source === 'ah' ? 'a vendor' : 'the AH'} instead`}
+                    aria-label={`Move to ${source === 'ah' ? 'vendor' : 'AH'}`}
+                  >
+                    ⇄
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+/** Adds a step that makes this item. Hidden when no known recipe makes it; a list when several do. */
+function MakeButton({ itemId, onPick }: { itemId: number; onPick: (recipeId: string) => void }) {
+  const { engine } = useStore();
+  const [open, setOpen] = useState(false);
+  const producers = useMemo(() => producersOf(engine, itemId), [engine, itemId]);
+  if (producers.length === 0) return null;
+  const name = engine.items.get(itemId)?.name ?? `#${itemId}`;
+  const title = producers.length === 1 ? `Add step: ${producers[0].name}` : `Add a step that makes ${name}`;
+  return (
+    <span className="combo inline-combo">
+      <button
+        className="icon-btn"
+        title={title}
+        aria-label={title}
+        aria-expanded={producers.length > 1 ? open : undefined}
+        onClick={() => (producers.length === 1 ? onPick(producers[0].id) : setOpen(!open))}
+        onBlur={() => setOpen(false)}
+      >
+        +
+      </button>
+      {open && (
+        <ul className="combo-list combo-right" role="listbox">
+          {producers.map((r) => (
+            <li
+              key={r.id}
+              role="option"
+              aria-selected={false}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onPick(r.id);
+              }}
+            >
+              <span className="combo-name">
+                {r.name} <span className="muted small">({r.kind})</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </span>
+  );
+}
+
 function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   if (!a.ok) {
     return (
@@ -385,20 +498,57 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   return (
     <Panel className="results">
       <div className="kpis">
-        <div className="kpi kpi-worst">
-          <span className="kpi-label">Worst case, batch of {a.batchSize}</span>
-          <span className="kpi-value">
-            <Money value={sim?.worstCase ?? null} signed />
-          </span>
-          <span className="kpi-sub">95% of batches do at least this well</span>
-        </div>
+        {sim?.deterministic ? (
+          <>
+            <div className="kpi kpi-worst">
+              <span className="kpi-label">Batch profit, batch of {a.batchSize}</span>
+              <span className="kpi-value">
+                <Money value={sim.p50} signed />
+              </span>
+              <span className="kpi-sub">no chance-based outputs, so no simulation needed</span>
+            </div>
+            {sim.worstCase !== sim.p50 && (
+              <div className="kpi">
+                <span className="kpi-label">With pessimistic AH prices</span>
+                <span className="kpi-value">
+                  <Money value={sim.worstCase} signed />
+                </span>
+                <span className="kpi-sub">same batch, pessimistic sell prices</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="kpi kpi-worst">
+              <span className="kpi-label">Worst case, batch of {a.batchSize}</span>
+              <span className="kpi-value">
+                <Money value={sim?.worstCase ?? null} signed />
+              </span>
+              <span className="kpi-sub">95% of batches do at least this well</span>
+            </div>
+            <div className="kpi">
+              <span className="kpi-label">Batch P5 / median / P95</span>
+              <span className="kpi-value range">
+                <Money value={sim?.p5} signed /> <span className="muted">/</span> <Money value={sim?.p50} signed /> <span className="muted">/</span>{' '}
+                <Money value={sim?.p95} signed />
+              </span>
+              <span className="kpi-sub">{sim ? `${sim.runs.toLocaleString()} simulated batches` : ''}</span>
+            </div>
+          </>
+        )}
         <div className="kpi">
-          <span className="kpi-label">Batch P5 / median / P95</span>
-          <span className="kpi-value range">
-            <Money value={sim?.p5} signed /> <span className="muted">/</span> <Money value={sim?.p50} signed /> <span className="muted">/</span>{' '}
-            <Money value={sim?.p95} signed />
+          <span className="kpi-label">Investment per batch</span>
+          <span className="kpi-value">
+            <Money value={a.batchInvestment} />
           </span>
-          <span className="kpi-sub">{sim ? `${sim.runs.toLocaleString()} simulated batches` : ''}</span>
+          <span className="kpi-sub">
+            gold to buy all inputs
+            {a.batchDeposits > 0 && (
+              <>
+                , plus up to <Money value={a.batchDeposits} /> in AH deposits
+              </>
+            )}
+          </span>
         </div>
         <div className="kpi">
           <span className="kpi-label">Gold per hour</span>
@@ -431,7 +581,7 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
         )}
         {sim && sim.leftovers.length > 0 && (
           <p>
-            Typical leftovers per batch:{' '}
+            {sim.deterministic ? 'Leftovers per batch:' : 'Typical leftovers per batch:'}{' '}
             {sim.leftovers.map((l, i) => (
               <span key={l.itemId}>
                 {i > 0 && ', '}
@@ -464,22 +614,19 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   );
 }
 
-function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
+/** Only uncommon, rare and epic armor and weapons can be disenchanted. */
+const disenchantable = (i: Item) => (i.itemClass === 'armor' || i.itemClass === 'weapon') && i.quality >= 2 && i.quality <= 4;
+
+function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outputs: number[] }) {
   const { engine, recipeRecords, mutateAsync } = useStore();
   const [mode, setMode] = useState<'recipe' | 'disenchant'>('recipe');
-  const [recipeId, setRecipeId] = useState('');
   const [deItem, setDeItem] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const recipes = recipeRecords.map((r) => engine.recipes.get(r.id)!).sort((a, b) => a.name.localeCompare(b.name));
 
-  const add = async () => {
+  const addDisenchant = async () => {
     setErr(null);
-    if (mode === 'recipe') {
-      if (!recipeId) return;
-      onAdd({ type: 'recipe', recipeId });
-      setRecipeId('');
-    } else {
-      if (deItem === null) return;
+    if (deItem !== null) {
       if (!engine.items.has(deItem)) {
         try {
           await mutateAsync((repo) => importItem(repo, deItem));
@@ -492,6 +639,11 @@ function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
     }
   };
 
+  // Items this workflow already makes that can be disenchanted come first.
+  const deFromWorkflow = outputs.filter((id) => {
+    const it = engine.items.get(id);
+    return it !== undefined && disenchantable(it);
+  });
   const deItemObj = deItem !== null ? engine.items.get(deItem) : undefined;
   const noRule = deItemObj && !findDisenchantRule(engine.deRules, deItemObj);
 
@@ -506,25 +658,67 @@ function AddStep({ onAdd }: { onAdd: (step: WorkflowStep) => void }) {
         onChange={setMode}
       />
       {mode === 'recipe' ? (
-        <select value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
-          <option value="">{recipes.length ? 'Choose a recipe...' : 'No recipes yet, import some first'}</option>
-          {recipes.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name} ({r.kind})
-            </option>
-          ))}
-        </select>
+        <RecipeSearch recipes={recipes} onPick={(r) => onAdd({ type: 'recipe', recipeId: r.id })} />
       ) : (
         <ItemPicker
           value={deItem}
           onChange={setDeItem}
-          filter={(i) => i.itemClass === 'armor' || i.itemClass === 'weapon'}
+          filter={disenchantable}
+          preferred={deFromWorkflow}
+          preferredLabel="made in this workflow"
           placeholder="Item to disenchant"
         />
       )}
-      <button onClick={add}>Add step</button>
+      {mode === 'disenchant' && <button onClick={addDisenchant}>Add step</button>}
       {noRule && <span className="small warn">No disenchant rule matches this item yet.</span>}
       {err && <span className="small warn">{err}</span>}
     </div>
+  );
+}
+
+/** Search box for recipes by recipe, reagent or product name. Picking a result adds it. */
+function RecipeSearch({ recipes, onPick }: { recipes: Recipe[]; onPick: (r: Recipe) => void }) {
+  const { engine } = useStore();
+  const [query, setQuery] = useState('');
+  const matches = useMemo(() => searchRecipes(recipes, engine.items, query), [recipes, engine.items, query]);
+  const itemName = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
+
+  return (
+    <Combo
+      className="recipe-search"
+      text={query}
+      onText={setQuery}
+      options={matches}
+      optionKey={(m) => m.recipe.id}
+      onPick={(m) => {
+        onPick(m.recipe);
+        setQuery('');
+      }}
+      placeholder={recipes.length ? 'Search recipe, reagent or product...' : 'No recipes yet, import some first'}
+      disabled={!recipes.length}
+      empty="No recipe matches."
+      renderOption={({ recipe: r, matchedItems }) => (
+        <>
+          <span className="combo-name">
+            {r.name} <span className="muted small">({r.kind})</span>
+          </span>
+          <span className="combo-io small muted">
+            {r.inputs.map((x, k) => (
+              <span key={k} className={matchedItems.includes(x.itemId) ? 'hit' : ''}>
+                {k > 0 && ' + '}
+                {x.qty} {itemName(x.itemId)}
+              </span>
+            ))}
+            {' → '}
+            {r.outputs.map((o, k) => (
+              <span key={k} className={matchedItems.includes(o.itemId) ? 'hit' : ''}>
+                {k > 0 && ', '}
+                {itemName(o.itemId)}
+              </span>
+            ))}
+          </span>
+        </>
+      )}
+    />
   );
 }
