@@ -11,7 +11,7 @@ const MIN_DE_QUALITY = 2;
 /** Manually maintained disenchant rules (REQ-3.1, DEC-2, DEC-7). */
 export function DisenchantPage() {
   const { deRules, engine, mutate } = useStore();
-  const [checkCount, setCheckCount] = useState<number | null>(37);
+  const [checkCount, setCheckCount] = useState<number | null>(100);
 
   const addRule = () =>
     mutate((repo) => repo.saveDeRule({ id: 0, quality: 2, ilvlMin: 1, ilvlMax: 10, itemClass: 'armor', outputs: [], notes: '' }));
