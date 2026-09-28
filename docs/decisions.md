@@ -114,3 +114,11 @@
 - **Context**: PRD open question: what is the "unit" for per-unit figures?
 - **Chosen**: Each workflow has a unit item. Default: the item fed into the first non-craft step (the gloves that get disenchanted), else the first step's product.
 - **Why**: "Per glove" is how the DE shuffle is reasoned about. The solver fixes production of the unit item at 1 and balances every intermediate item, so any produced item works as a unit.
+
+## DEC-20: Buy price limits via a "disenchant any" step
+- **Context**: The user wants to know the most they can pay for, say, any uncommon armor of item level 5 to 15 when it gets disenchanted into oil and wands. That is a price to solve for, not a price to enter.
+- **Options considered**: (A) a separate calculator tab; (B) a workflow step "disenchant any item of quality Q, armor or weapon, item level L" whose item price is solved for.
+- **Chosen**: B.
+- **Why**: Everything after the disenchant (oil, wands, vendor buys, time, simulation) is an ordinary workflow, so a tab would duplicate it. Every item in a DE rule band disenchants the same, so one stand-in item per band is exact. The stand-in has a negative ID that encodes quality, type and level, so it never clashes with a WoW ID and needs no storage.
+- **Outputs, per item**: break-even (expected profit zero); safe max (the P5 batch, with pessimistic AH prices, breaks even); and the price that still earns a per-workflow target gold per hour, which is the "optimum" since it also pays for the time spent. Profit figures of such a workflow leave the item's cost out. Prices round down to whole copper.
+- **Limitation**: One "any item" per workflow gets a limit; a range that spans several rule bands would need a mix of rules and is not modelled.

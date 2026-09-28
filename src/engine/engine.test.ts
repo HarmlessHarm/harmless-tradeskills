@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
 import { deShuffle, engineData, IDS } from '../test/fixtures';
 import { deposit, flip, netOnSale } from './ah';
-import { deriveDisenchantRecipe, findDisenchantRule } from './disenchant';
+import { anyItem, anyItemId, deriveDisenchantRecipe, findDisenchantRule } from './disenchant';
 import { formatMoney, parseMoney } from './money';
-import { analyzeWorkflow, insertBeforeConsumer, producersOf } from './workflow';
+import { analyzeWorkflow, describeStep, insertBeforeConsumer, producersOf } from './workflow';
 
 describe('money', () => {
   it('formats copper as g/s/c', () => {
@@ -240,5 +240,66 @@ describe('workflow: adding a step for a bought input', () => {
 
   it('falls back to the top when no step uses the item', () => {
     expect(insertBeforeConsumer(data, deShuffle.steps.slice(3), IDS.bolt, bolt)[0]).toEqual(bolt);
+  });
+});
+
+describe('workflow: buy limit for any uncommon armor', () => {
+  const data = engineData();
+  const armor = anyItemId(2, 'armor', 10);
+  const anyStep = { type: 'disenchant-any' as const, quality: 2 as const, itemClass: 'armor' as const, itemLevel: 10 };
+  const wf = {
+    ...deShuffle,
+    steps: [
+      anyStep,
+      { type: 'recipe' as const, recipeId: 'spell:25124' },
+      { type: 'recipe' as const, recipeId: 'spell:14807' },
+    ],
+  };
+  const a = analyzeWorkflow(data, wf);
+  const cost = 1.2 * (90 + 4) + 0.15 * 38;
+  const revenue = 1.2 * 400 + 0.15 * 1100;
+
+  it('names the stand-in item after the matching rule band', () => {
+    expect(anyItem(data.deRules, armor)).toMatchObject({ quality: 2, itemClass: 'armor', itemLevel: 10, name: 'Any uncommon armor, ilvl 5-15' });
+    expect(anyItem(data.deRules, anyItemId(3, 'weapon', 40))?.name).toBe('Any rare weapon, ilvl 40');
+    expect(describeStep(data, anyStep)).toBe('Disenchant any uncommon armor, ilvl 5-15');
+  });
+
+  it('solves per bought item and leaves its cost out', () => {
+    expect(a.errors).toEqual([]);
+    expect(a.unitItemId).toBe(armor);
+    expect(a.steps.map((s) => s.runsPerUnit)).toEqual([1, expect.closeTo(1.2), expect.closeTo(0.15)]);
+    expect(a.externalInputs.some((x) => x.itemId === armor)).toBe(false);
+    expect(a.missingPrices).toEqual([]);
+    expect(a.profitPerUnit).toBeCloseTo(revenue - cost);
+  });
+
+  it('gives the break-even and worst case buy prices', () => {
+    const limit = a.buyLimit!;
+    expect(limit.itemId).toBe(armor);
+    expect(limit.breakEven).toBe(Math.floor(revenue - cost));
+    expect(limit.forTarget).toBeNull();
+    const sim = a.simulation!;
+    expect(limit.worstCase).toBe(Math.floor(sim.worstCase / 20));
+    expect(limit.worstCase!).toBeLessThan(limit.breakEven);
+  });
+
+  it('gives the buy price that still earns a target gold per hour', () => {
+    const target = 5 * 10_000;
+    const r = analyzeWorkflow(data, { ...wf, targetGoldPerHour: target });
+    const price = r.buyLimit!.forTarget!;
+    const gph = (p: number) => ((r.batchProfit - 20 * p) * 3600) / r.batchTimeSec;
+    expect(gph(price)).toBeGreaterThanOrEqual(target);
+    expect(gph(price + 1)).toBeLessThan(target);
+    expect(analyzeWorkflow(data, { ...wf, targetGoldPerHour: 0 }).buyLimit!.forTarget).toBe(a.buyLimit!.breakEven);
+  });
+
+  it('has no buy limit for a normal workflow', () => {
+    expect(analyzeWorkflow(data, deShuffle).buyLimit).toBeNull();
+  });
+
+  it('reports a band without a disenchant rule', () => {
+    const r = analyzeWorkflow(data, { ...wf, steps: [{ ...anyStep, itemLevel: 30 }, ...wf.steps.slice(1)] });
+    expect(r.errors[0]).toMatch(/no disenchant rule matches any uncommon armor, ilvl 30/);
   });
 });

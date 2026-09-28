@@ -68,6 +68,8 @@ export const MIGRATIONS: string[] = [
     (2, 5, 15, 'weapon', '[{"itemId":10940,"chance":0.2,"minQty":1,"maxQty":2},{"itemId":10938,"chance":0.8,"minQty":1,"maxQty":2}]', 'Classic values, unverified for Forever');
   `,
   deSeedMigration(),
+  // Target gold per hour for solving the buy limit of a 'disenchant-any' step (DEC-20).
+  `ALTER TABLE workflows ADD COLUMN target_gph INTEGER;`,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

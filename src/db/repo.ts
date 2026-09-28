@@ -226,6 +226,7 @@ export class Repo {
       batchSize: num(r.batch_size),
       ahType: r.ah_type as Workflow['ahType'],
       ahDuration: String(r.ah_duration),
+      targetGoldPerHour: num(r.target_gph),
       updatedAt: Number(r.updated_at),
     }));
   }
@@ -242,19 +243,20 @@ export class Repo {
       wf.batchSize,
       wf.ahType,
       wf.ahDuration,
+      wf.targetGoldPerHour,
       wf.updatedAt,
     ];
     if (wf.id) {
       this.run(
         `UPDATE workflows SET name=?, notes=?, steps=?, unit_item_id=?, buy_map=?, sell_map=?, batch_size=?,
-         ah_type=?, ah_duration=?, updated_at=? WHERE id=?`,
+         ah_type=?, ah_duration=?, target_gph=?, updated_at=? WHERE id=?`,
         [...params, wf.id],
       );
       return wf.id;
     }
     this.run(
-      `INSERT INTO workflows (name, notes, steps, unit_item_id, buy_map, sell_map, batch_size, ah_type, ah_duration, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO workflows (name, notes, steps, unit_item_id, buy_map, sell_map, batch_size, ah_type, ah_duration, target_gph, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       params,
     );
     return Number(this.db.exec('SELECT last_insert_rowid()')[0].values[0][0]);

@@ -111,5 +111,6 @@ export const deShuffle: Workflow = {
   batchSize: 20,
   ahType: 'faction',
   ahDuration: '8h',
+  targetGoldPerHour: null,
   updatedAt: 0,
 };

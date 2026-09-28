@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react';
+import { anyItem } from '../engine/disenchant';
 import { formatMoney, parseMoney, splitMoney } from '../engine/money';
 import type { Copper, Item, PriceObservation } from '../engine/types';
 import { useStore } from '../state/store';
@@ -109,6 +110,15 @@ export function ItemName({ id, link = false }: { id: number; link?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const item = engine.items.get(id);
+  const any = item ? null : anyItem(engine.deRules, id);
+  if (any) {
+    return (
+      <span className="item-name">
+        <span className="icon icon-empty" />
+        <span className={`q${any.quality}`}>{any.name}</span>
+      </span>
+    );
+  }
   if (!item) {
     return (
       <span className="item-name unknown">
