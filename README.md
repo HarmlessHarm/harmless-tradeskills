@@ -41,6 +41,6 @@ npm run build      # typecheck + production build
 
 ## Still to verify
 
-- **Wowhead parsing** was written against the documented response shape, not live responses (the build environment cannot reach Wowhead). Import a few items and recipes and check them; each record keeps its raw tooltip for comparison. If something parses wrong, the fix goes in `src/wowhead/adapter.ts`, and the test fixtures in `adapter.test.ts` should be replaced with real captured responses.
+- **Wowhead parsing** is tested against real Forever responses saved in `src/wowhead/fixtures/` (fetched outside the build environment, which cannot reach Wowhead). When a tooltip parses wrong, save the raw response there, add a test in `adapter.test.ts`, and fix `src/wowhead/adapter.ts`.
 - **AH cut and deposit rates** are Classic placeholders. Check them in game and update them in Settings.
 - **Disenchant rules** are seeded with Classic values for uncommon items level 5 to 15. Check against DE Tracker totals.

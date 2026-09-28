@@ -316,7 +316,7 @@ function RecipeEditor({ record, onClose }: { record: RecipeRecord; onClose: () =
       {rec.outputMode === 'exclusive' && chanceSum > 1.0001 && <p className="warn small">Chances add up to more than 100%.</p>}
       <AddItemRow label="Add output" onAdd={(id) => set('outputs', [...rec.outputs, { itemId: id, chance: 1, minQty: 1, maxQty: 1 }])} />
       <p className="small muted">
-        Wowhead shows "(2)" after some created items; that looks like a quality marker, so imports use quantity 1. Change it here if a recipe really
+        Wowhead shows "(2)" after some created items, but it is not a count we can trust yet, so imports use quantity 1. Change it here if a recipe really
         makes more.
       </p>
 
