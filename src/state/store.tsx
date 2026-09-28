@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { openBrowserDb, openDbFromBytes, persist, persister } from '../db/browser';
 import { Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
-import type { Config, DisenchantRule, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
+import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
 import type { EngineData } from '../engine/workflow';
 
 export interface Snapshot {
@@ -13,6 +13,7 @@ export interface Snapshot {
   prices: PriceObservation[];
   workflows: Workflow[];
   config: Config;
+  flipFavorites: FlipFavorite[];
 }
 
 interface StoreValue extends Snapshot {
@@ -36,6 +37,7 @@ function readSnapshot(repo: Repo): Snapshot {
     prices: repo.latestPrices(),
     workflows: repo.listWorkflows(),
     config: repo.getConfig(),
+    flipFavorites: repo.listFlipFavorites(),
   };
 }
 

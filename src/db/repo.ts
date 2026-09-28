@@ -3,6 +3,7 @@ import { withDefaults } from '../config';
 import type {
   Config,
   DisenchantRule,
+  FlipFavorite,
   ItemRecord,
   PriceObservation,
   RecipeRecord,
@@ -273,6 +274,19 @@ export class Repo {
   saveConfig(config: Config): void {
     this.run(`INSERT INTO settings (key, value) VALUES ('config', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
       JSON.stringify(config),
+    ]);
+  }
+
+  // Flip favorites ----------------------------------------------------------
+
+  listFlipFavorites(): FlipFavorite[] {
+    const row = this.all(`SELECT value FROM settings WHERE key = 'flipFavorites'`)[0];
+    return row ? json<FlipFavorite[]>(row.value, []) : [];
+  }
+
+  saveFlipFavorites(favorites: FlipFavorite[]): void {
+    this.run(`INSERT INTO settings (key, value) VALUES ('flipFavorites', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
+      JSON.stringify(favorites),
     ]);
   }
 }
