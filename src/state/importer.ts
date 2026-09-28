@@ -104,36 +104,52 @@ export function setRecipeProfession(repo: Repo, spellId: number, profession: str
 export async function bulkImport(
   repo: Repo,
   refs: WowheadRef[],
-  opts: { force: boolean; profession?: string | null },
+  opts: { force: boolean; profession?: string | null; fetcher?: Fetcher },
   onProgress: (done: number, total: number) => void,
 ): Promise<BulkResult> {
   const ordered = [...refs.filter((r) => r.type === 'spell'), ...refs.filter((r) => r.type === 'item')];
+  const refKey = (r: WowheadRef) => `${r.type}:${r.id}`;
+  const has = (r: WowheadRef) =>
+    r.type === 'spell' ? repo.listRecipes().some((x) => x.spellId === r.id) : repo.listItems().some((it) => it.id === r.id);
+  // Progress counts only what this run imports, the same number the Import button shows.
+  const skip = new Set(opts.force ? [] : ordered.filter(has).map(refKey));
+  const todo = ordered.filter((r) => !skip.has(refKey(r)));
+  const done = new Set<string>();
+  // A recipe import also brings in its reagents and created item, so pasted items it brought
+  // in count as done right away instead of all at once at the end.
+  const markPulledIn = () => {
+    if (!opts.force) for (const r of todo) if (r.type === 'item' && !done.has(refKey(r)) && has(r)) done.add(refKey(r));
+  };
   const result: BulkResult = { imported: 0, skipped: 0, tagged: 0, errors: [], warnings: [] };
-  onProgress(0, ordered.length);
-  for (let i = 0; i < ordered.length; i++) {
-    const ref = ordered[i];
-    const exists =
-      ref.type === 'spell' ? repo.listRecipes().some((r) => r.spellId === ref.id) : repo.listItems().some((it) => it.id === ref.id);
-    if (exists && !opts.force) {
+  let fetched = false;
+  onProgress(0, todo.length);
+  for (const ref of ordered) {
+    const k = refKey(ref);
+    if (skip.has(k)) {
       result.skipped++;
+    } else if (done.has(k)) {
+      result.imported++;
     } else {
-      if (i > 0) await sleep(BULK_DELAY_MS);
+      if (fetched) await sleep(BULK_DELAY_MS);
+      fetched = true;
       try {
         if (ref.type === 'spell') {
-          const r = await importRecipe(repo, ref.id, { force: opts.force });
+          const r = await importRecipe(repo, ref.id, { force: opts.force, fetcher: opts.fetcher });
           result.warnings.push(...r.warnings.map((w) => `${r.recipe.imported.name}: ${w}`));
           result.errors.push(...r.itemErrors);
         } else {
-          await importItem(repo, ref.id, { force: opts.force });
+          await importItem(repo, ref.id, { force: opts.force, fetcher: opts.fetcher });
         }
         result.imported++;
       } catch (e) {
         result.errors.push(e instanceof Error ? e.message : String(e));
       }
+      done.add(k);
+      markPulledIn();
+      onProgress(done.size, todo.length);
     }
     // Tag pasted recipes with the chosen profession, including ones that were already imported.
     if (ref.type === 'spell' && opts.profession && setRecipeProfession(repo, ref.id, opts.profession)) result.tagged++;
-    onProgress(i + 1, ordered.length);
   }
   return result;
 }
