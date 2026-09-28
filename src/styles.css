@@ -367,6 +367,12 @@ label.inline {
   border-bottom: 1px solid rgba(44, 52, 65, 0.6);
   vertical-align: middle;
 }
+/* Shrink a column to its content; the remaining width goes to the other columns. */
+.table .tight {
+  width: 1%;
+  white-space: nowrap;
+  padding-right: 20px;
+}
 .table tr:last-child td {
   border-bottom: none;
 }

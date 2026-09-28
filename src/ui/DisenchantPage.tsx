@@ -147,10 +147,10 @@ export function DisenchantPage() {
           <table className="table">
             <thead>
               <tr>
-                <SortHeader label="Quality" k="quality" sort={sort} />
-                <SortHeader label="Min iLvl" k="min" sort={sort} className="r" />
-                <SortHeader label="Max iLvl" k="max" sort={sort} className="r" />
-                <SortHeader label="Type" k="type" sort={sort} />
+                <SortHeader label="Quality" k="quality" sort={sort} className="tight" />
+                <SortHeader label="Min iLvl" k="min" sort={sort} className="r tight" />
+                <SortHeader label="Max iLvl" k="max" sort={sort} className="r tight" />
+                <SortHeader label="Type" k="type" sort={sort} className="tight" />
                 <th>Results</th>
                 <th />
               </tr>
@@ -159,10 +159,10 @@ export function DisenchantPage() {
               {rows.map((rule) => (
                 <Fragment key={rule.id}>
                   <tr className={editing === rule.id ? 'editing' : ''}>
-                    <td className={`q${rule.quality}`}>{QUALITY_NAMES[rule.quality]}</td>
-                    <td className="r">{rule.ilvlMin}</td>
-                    <td className="r">{rule.ilvlMax}</td>
-                    <td className="small">{rule.itemClass === 'armor' ? 'Armor' : 'Weapon'}</td>
+                    <td className={`tight q${rule.quality}`}>{QUALITY_NAMES[rule.quality]}</td>
+                    <td className="r tight">{rule.ilvlMin}</td>
+                    <td className="r tight">{rule.ilvlMax}</td>
+                    <td className="small tight">{rule.itemClass === 'armor' ? 'Armor' : 'Weapon'}</td>
                     <td className="small">
                       {rule.outputs.map((o, k) => (
                         <div key={k}>
