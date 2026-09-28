@@ -1,4 +1,4 @@
-import { netOnSale } from './ah';
+import { deposit, netOnSale } from './ah';
 import { deriveDisenchantRecipe } from './disenchant';
 import { expectedQty } from './items';
 import { price, type PriceContext } from './prices';
@@ -36,6 +36,8 @@ export interface ExternalInput {
   source: BuySource;
   unitPrice: Copper | null;
   costPerUnit: Copper;
+  /** Whole items to buy for one batch. */
+  qtyPerBatch: number;
 }
 
 export interface TerminalOutput {
@@ -84,6 +86,10 @@ export interface WorkflowAnalysis {
   batchSize: number;
   batchTimeSec: number;
   batchProfit: Copper;
+  /** Gold needed up front to buy every input for one batch. */
+  batchInvestment: Copper;
+  /** Deposits for posting a batch's AH sales, listed one item at a time. Refunded on sale. */
+  batchDeposits: Copper;
   goldPerHourCopper: Copper;
   simulation: SimulationResult | null;
 }
@@ -275,6 +281,8 @@ function emptyAnalysis(errors: string[], unitItemId: number | null = null): Work
     batchSize: 0,
     batchTimeSec: 0,
     batchProfit: 0,
+    batchInvestment: 0,
+    batchDeposits: 0,
     goldPerHourCopper: 0,
     simulation: null,
   };
@@ -330,13 +338,21 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
     if (!missing.some((m) => m.itemId === itemId && m.what === what)) missing.push({ itemId, what });
   };
 
+  const batchSize = Math.max(1, wf.batchSize ?? cfg.defaultBatchSize);
   const externalInputs: ExternalInput[] = [];
   for (const [itemId, qty] of bought) {
     if (qty < EPS) continue;
     const source = buySourceFor(data, wf, itemId);
     const unitPrice = buyPrice(data, itemId, source);
     if (unitPrice === null) noteMissing(itemId, source === 'vendor' ? 'vendor buy price' : 'ah price');
-    externalInputs.push({ itemId, qtyPerUnit: qty, source, unitPrice, costPerUnit: (unitPrice ?? 0) * qty });
+    externalInputs.push({
+      itemId,
+      qtyPerUnit: qty,
+      source,
+      unitPrice,
+      costPerUnit: (unitPrice ?? 0) * qty,
+      qtyPerBatch: Math.ceil(qty * batchSize - 1e-6),
+    });
   }
 
   const terminalOutputs: TerminalOutput[] = [];
@@ -360,7 +376,13 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
   const revenuePerUnit = terminalOutputs.reduce((s, x) => s + x.valuePerUnit, 0);
   const profitPerUnit = revenuePerUnit - costPerUnit;
   const timePerUnitSec = steps.reduce((s, x) => s + x.secondsPerUnit, 0);
-  const batchSize = Math.max(1, wf.batchSize ?? cfg.defaultBatchSize);
+  const batchInvestment = externalInputs.reduce((s, x) => s + x.qtyPerBatch * (x.unitPrice ?? 0), 0);
+  const batchDeposits = terminalOutputs
+    .filter((x) => x.disposition === 'ah')
+    .reduce((s, x) => {
+      const each = deposit(cfg, data.items.get(x.itemId)?.vendorSell ?? null, 1, wf.ahDuration, wf.ahType);
+      return s + Math.ceil(x.qtyPerUnit * batchSize - 1e-6) * each;
+    }, 0);
   const batchTimeSec = batchSize * timePerUnitSec + cfg.perBatchOverheadSec;
   const batchProfit = profitPerUnit * batchSize;
   const goldPerHourCopper = batchTimeSec > 0 ? (batchProfit / batchTimeSec) * 3600 : 0;
@@ -387,6 +409,8 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
     batchSize,
     batchTimeSec,
     batchProfit,
+    batchInvestment,
+    batchDeposits,
     goldPerHourCopper,
     simulation: null,
   };

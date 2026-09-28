@@ -277,13 +277,12 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
 
       {analysis.ok && (
         <div className="grid2">
-          <Panel title="Buy (per unit)">
+          <Panel title="Buy">
             {(['ah', 'vendor'] as const).map((source) => (
               <BuySection
                 key={source}
                 source={source}
                 inputs={analysis.externalInputs.filter((x) => x.source === source)}
-                batchSize={analysis.batchSize}
                 onMove={(itemId) => save({ buyMap: { ...wf.buyMap, [itemId]: source === 'ah' ? 'vendor' : 'ah' } })}
               />
             ))}
@@ -353,20 +352,20 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
 function BuySection({
   source,
   inputs,
-  batchSize,
   onMove,
 }: {
   source: 'ah' | 'vendor';
   inputs: ExternalInput[];
-  batchSize: number;
   onMove: (itemId: number) => void;
 }) {
-  const total = inputs.reduce((sum, x) => sum + x.costPerUnit, 0);
+  const total = inputs.reduce((sum, x) => sum + x.qtyPerBatch * (x.unitPrice ?? 0), 0);
   return (
     <section className="buy-section">
       <h3 className="buy-section-head">
         <span>{source === 'ah' ? 'Auction House' : 'Vendor'}</span>
-        <Money value={total} />
+        <span title="Cost of the whole batch from this source">
+          <Money value={total} /> <span className="muted">/ batch</span>
+        </span>
       </h3>
       {inputs.length === 0 ? (
         <p className="small muted">Nothing to buy here.</p>
@@ -375,12 +374,12 @@ function BuySection({
           <thead>
             <tr>
               <th>Item</th>
-              <th className="r">Qty</th>
+              <th className="r">Per unit</th>
               <th className="r" title="Quantity for the whole batch, rounded up">
                 Batch
               </th>
               <th>Price</th>
-              <th className="r">Cost</th>
+              <th className="r">Cost / unit</th>
               <th />
             </tr>
           </thead>
@@ -391,7 +390,7 @@ function BuySection({
                   <ItemName id={x.itemId} />
                 </td>
                 <td className="r">{round3(x.qtyPerUnit)}</td>
-                <td className="r">{fmtQty(Math.ceil(x.qtyPerUnit * batchSize - 1e-6))}</td>
+                <td className="r">{fmtQty(x.qtyPerBatch)}</td>
                 <td>
                   {source === 'ah' ? (
                     <div className="price-cell">
@@ -471,6 +470,20 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
             </div>
           </>
         )}
+        <div className="kpi">
+          <span className="kpi-label">Investment per batch</span>
+          <span className="kpi-value">
+            <Money value={a.batchInvestment} />
+          </span>
+          <span className="kpi-sub">
+            gold to buy all inputs
+            {a.batchDeposits > 0 && (
+              <>
+                , plus up to <Money value={a.batchDeposits} /> in AH deposits
+              </>
+            )}
+          </span>
+        </div>
         <div className="kpi">
           <span className="kpi-label">Gold per hour</span>
           <span className="kpi-value">

@@ -121,6 +121,16 @@ describe('workflow: DE shuffle', () => {
     expect(a.goldPerHourCopper).toBeCloseTo((a.profitPerUnit * 20 * 3600) / (20 * perUnit + 60));
   });
 
+  it('computes the gold needed to buy a batch', () => {
+    // 80 linen, 20 thread, 24 seeds, 24 vials, 3 wood; oil and wand go to a vendor, so no deposits.
+    expect(a.batchInvestment).toBe(80 * 15 + 20 * 10 + 24 * 90 + 24 * 4 + 3 * 38);
+    expect(a.batchDeposits).toBe(0);
+    const d = engineData();
+    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahPessimistic: null, observedAt: 0 });
+    const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
+    expect(r.batchDeposits).toBe(24 * deposit(d.config, 400, 1, '8h', 'faction'));
+  });
+
   it('simulates a batch of 20 with an ordered percentile range', () => {
     const sim = a.simulation!;
     expect(sim.batchSize).toBe(20);
