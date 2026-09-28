@@ -1244,6 +1244,13 @@ th.r .sort-btn {
 .record-hint {
   margin: 6px 0 10px;
 }
+.record-echo {
+  margin: 6px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.record-echo + .record-hint {
+  margin-top: 2px;
+}
 .obs-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

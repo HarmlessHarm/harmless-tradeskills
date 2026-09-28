@@ -27,6 +27,8 @@ export function PricesCard({ r }: { r: Row }) {
       ? manualSnapshot({ itemId: r.watch.itemId, ahType: r.settings.ahType, lowest, lowestQty, totalQty: total, more: parsed.levels, observedAt: Date.now() })
       : null;
   const preview = draft ? summarize(draft) : null;
+  /** The rows as typed, lowest price first, for the "Read as" line (the snapshot merges equal prices). */
+  const typedRows = lowest !== null ? [{ price: lowest, qty: Math.max(1, lowestQty ?? 1) }, ...parsed.levels] : [];
   const canSave = draft !== null && parsed.errors.length === 0;
 
   const save = () => {
@@ -76,13 +78,26 @@ export function PricesCard({ r }: { r: Row }) {
           Save
         </button>
       </form>
+      {draft && parsed.errors.length === 0 && (parsed.levels.length > 0 || lowestQty !== null) && (
+        <p className="small muted record-echo">
+          Read as: {typedRows.map((l) => `${l.qty} @ ${formatMoney(l.price)}`).join(' · ')}
+          {total !== null && draft.totalQty !== null && draft.totalQty > total && (
+            <span className="warn">
+              {' '}
+              · The rows hold {draft.totalQty} units but Available says {total}: using {draft.totalQty}.
+            </span>
+          )}
+        </p>
+      )}
       <p className="small muted record-hint">
         {parsed.errors.length > 0 ? (
           <span className="neg">{parsed.errors.join(' · ')}. Rows are quantity x price, like 450x58c.</span>
         ) : preview?.marketValue != null ? (
           <>
             Market value <Money value={preview.marketValue} />{' '}
-            {preview.confidence === 'solid' ? '(solid)' : '(partial: add Available and more rows until they cover 15% of it)'}
+            {preview.confidence === 'solid'
+              ? `(solid: the average of the cheapest 15–30% of ${draft?.totalQty} units; pricier rows do not count)`
+              : '(partial: add Available and more rows until they cover 15% of it)'}
           </>
         ) : (
           'From the AH search result: the lowest price and how many are available. More rows make the market value solid.'
