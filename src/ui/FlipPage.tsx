@@ -10,7 +10,7 @@ import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
 type Settings = ReturnType<typeof rowSettings>;
 type Filter = 'all' | 'favorites' | 'workflows';
-type SortKey = 'name' | 'last' | 'typical' | 'buyBelow' | 'sellAt' | 'margin' | 'relists';
+type SortKey = 'name' | 'last' | 'typical' | 'n' | 'buyBelow' | 'sellAt' | 'margin' | 'relists';
 
 /** Fewer snapshots than this and the typical price is a guess. */
 const THIN_DATA = 5;
@@ -61,7 +61,7 @@ export function FlipPage() {
       .filter((r) => terms.every((t) => r.name.toLowerCase().includes(t))),
     sort,
     (r, k): SortValue =>
-      ({ name: r.name, last: r.row.lastLow, typical: r.row.typical, buyBelow: r.row.buyBelow, sellAt: r.row.sellAt, margin: r.row.marginPct, relists: r.row.relists })[k],
+      ({ name: r.name, last: r.row.lastLow, typical: r.row.typical, n: r.row.n, buyBelow: r.row.buyBelow, sellAt: r.row.sellAt, margin: r.row.marginPct, relists: r.row.relists })[k],
     (r) => r.name,
   );
 
@@ -134,7 +134,8 @@ export function FlipPage() {
                   <th className="check" />
                   <SortHeader label="Item" k="name" sort={sort} />
                   <SortHeader label="Last seen low" k="last" sort={sort} className="r" />
-                  <SortHeader label="Typical (n)" k="typical" sort={sort} className="r" />
+                  <SortHeader label="Typical" k="typical" sort={sort} className="r" />
+                  <SortHeader label="n" k="n" sort={sort} className="r tight" />
                   <SortHeader label="Buy below" k="buyBelow" sort={sort} className="r" />
                   <SortHeader label="Sell at" k="sellAt" sort={sort} className="r" />
                   <SortHeader label="Margin" k="margin" sort={sort} className="r" />
@@ -177,8 +178,10 @@ export function FlipPage() {
                           <Money value={r.row.lastLow} />
                           {r.row.lastLowAt !== null && <span className="sub">{ago(r.row.lastLowAt)}</span>}
                         </td>
-                        <td className="r nowrap">
+                        <td className="r">
                           <Money value={r.row.typical} />
+                        </td>
+                        <td className="r tight">
                           <NBadge n={r.row.n} />
                         </td>
                         <td className="r buy-below">
@@ -198,7 +201,7 @@ export function FlipPage() {
                       </tr>
                       {isOpen && (
                         <tr className="editor-row">
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             <QuickCalc r={r} config={config} targetMargin={margin} onChange={(patch) => save(r.watch.itemId, patch)} />
                           </td>
                         </tr>

@@ -411,6 +411,14 @@ a.wf-item {
 .r {
   text-align: right;
 }
+/* `.table th` sets left alignment and is more specific than `.r`: right-aligned columns need their header on the right too. */
+.table th.r {
+  text-align: right;
+}
+/* Digits of equal width, so numbers line up down a column. */
+.table td.r {
+  font-variant-numeric: tabular-nums;
+}
 .actions {
   text-align: right;
   white-space: nowrap;
@@ -1047,7 +1055,6 @@ th.r .sort-btn {
   min-width: 20px;
   height: 17px;
   padding: 0 5px;
-  margin-left: 6px;
   border-radius: 9px;
   font-size: 11px;
   font-weight: 600;
