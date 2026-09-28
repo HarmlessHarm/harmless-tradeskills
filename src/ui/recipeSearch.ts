@@ -7,10 +7,15 @@ export interface RecipeMatch {
 }
 
 /**
- * Every term must appear in the recipe name, a reagent name or a product name. Recipes whose
- * own name matches rank first, then the rest by name.
+ * Every term must appear in the recipe name, a reagent name or a product name. Recipes in
+ * `preferred` rank first, then recipes whose own name matches, then the rest by name.
  */
-export function searchRecipes(recipes: Recipe[], items: Map<number, Item>, query: string, limit = 50): RecipeMatch[] {
+export function searchRecipes(
+  recipes: Recipe[],
+  items: Map<number, Item>,
+  query: string,
+  { limit = 50, preferred }: { limit?: number; preferred?: ReadonlySet<string> } = {},
+): RecipeMatch[] {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   const itemName = (id: number) => items.get(id)?.name.toLowerCase() ?? '';
   const scored: { match: RecipeMatch; rank: number }[] = [];
@@ -27,7 +32,8 @@ export function searchRecipes(recipes: Recipe[], items: Map<number, Item>, query
       return inName || hits.length > 0;
     });
     if (!ok) continue;
-    const rank = terms.length === 0 ? 0 : name.startsWith(terms[0]) ? 0 : nameHits === terms.length ? 1 : nameHits > 0 ? 2 : 3;
+    const base = terms.length === 0 ? 0 : name.startsWith(terms[0]) ? 0 : nameHits === terms.length ? 1 : nameHits > 0 ? 2 : 3;
+    const rank = preferred?.has(recipe.id) ? base : base + 4;
     scored.push({ match: { recipe, matchedItems: [...matchedItems] }, rank });
   }
   return scored

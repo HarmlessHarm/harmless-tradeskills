@@ -26,4 +26,11 @@ describe('recipe search', () => {
   it('lists everything for an empty query', () => {
     expect(names('')).toHaveLength(all.length);
   });
+  it('lists preferred recipes first', () => {
+    const wand = all.find((r) => r.name === 'Greater Magic Wand')!;
+    expect(searchRecipes(all, items, '', { preferred: new Set([wand.id]) })[0].recipe).toBe(wand);
+    expect(names('bolt')[0]).toBe('Bolt of Linen Cloth');
+    const gloves = all.find((r) => r.name === 'Heavy Linen Gloves')!;
+    expect(searchRecipes(all, items, 'bolt', { preferred: new Set([gloves.id]) }).map((m) => m.recipe.name)).toEqual(['Heavy Linen Gloves', 'Bolt of Linen Cloth']);
+  });
 });
