@@ -3,18 +3,19 @@
  * workflow steps) are JSON text columns; everything that is looked up or filtered on is a column.
  * Append a migration to add changes; never edit an old one.
  *
- * Data is split over two database files so game data can be shared without personal data
- * (DEC-21):
+ * Data is split over three database files so game data and prices can be shared without personal
+ * data (DEC-21, DEC-23):
  * - data: items, recipes and disenchant rules. Shareable with other players.
  * - user: workflows, flip favorites, price observations and settings.
+ * - prices: AH price snapshots. Shareable with other players on the same realm.
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
 import { deSeedMigration } from './deSeed';
 
-export type DbKind = 'data' | 'user';
+export type DbKind = 'data' | 'user' | 'prices';
 
-/** PRAGMA application_id per kind ('HTSD' and 'HTSU'). A file without one is a legacy combined file. */
-export const APPLICATION_ID: Record<DbKind, number> = { data: 0x48545344, user: 0x48545355 };
+/** PRAGMA application_id per kind ('HTSD', 'HTSU', 'HTSP'). A file without one is a legacy combined file. */
+export const APPLICATION_ID: Record<DbKind, number> = { data: 0x48545344, user: 0x48545355, prices: 0x48545350 };
 
 export const DATA_MIGRATIONS: string[] = [
   `
@@ -85,11 +86,42 @@ export const USER_MIGRATIONS: string[] = [
   ALTER TABLE price_observations ADD COLUMN ah_min INTEGER;`,
 ];
 
-/** Schema version of each kind at the split, which is what a split legacy file matches. */
-export const SPLIT_VERSION: Record<DbKind, number> = { data: 2, user: 1 };
+/**
+ * AH price snapshots (DEC-23): the cheap end of the order book for one item at one moment, as rows
+ * of (price, qty). The derived columns are computed from `levels` on save and can be recomputed.
+ * `uid` is a stable id, so the same snapshot imported twice (a re-imported scan, a shared file)
+ * is stored once.
+ */
+export const PRICES_MIGRATIONS: string[] = [
+  `
+  CREATE TABLE price_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL UNIQUE,
+    item_id INTEGER NOT NULL,
+    observed_at INTEGER NOT NULL,
+    ah_type TEXT NOT NULL DEFAULT 'faction',
+    source TEXT NOT NULL,
+    total_qty INTEGER,
+    levels TEXT NOT NULL,
+    truncated INTEGER NOT NULL,
+    min_price INTEGER,
+    min_qty INTEGER,
+    market_value INTEGER,
+    confidence TEXT
+  );
+  CREATE INDEX price_snap_item ON price_snapshots (item_id, observed_at);
+  `,
+];
 
-/** Tables of each kind, used to split a legacy combined file. */
-export const TABLES: Record<DbKind, string[]> = {
+/** The kinds a legacy combined file is split into. Prices did not exist yet. */
+export type LegacyKind = 'data' | 'user';
+export const LEGACY_KINDS: LegacyKind[] = ['data', 'user'];
+
+/** Schema version of each kind at the split, which is what a split legacy file matches. */
+export const SPLIT_VERSION: Record<LegacyKind, number> = { data: 2, user: 1 };
+
+/** Tables of each legacy kind, used to split a legacy combined file. */
+export const TABLES: Record<LegacyKind, string[]> = {
   data: ['items', 'recipes', 'de_rules'],
   user: ['price_observations', 'workflows', 'settings'],
 };

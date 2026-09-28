@@ -9,7 +9,19 @@ import type {
   RecipeRecord,
   Workflow,
 } from '../engine/types';
-import { APPLICATION_ID, DATA_MIGRATIONS, type DbKind, LEGACY_MIGRATIONS, SPLIT_VERSION, TABLES, USER_MIGRATIONS } from './schema';
+import { type PriceLevel, type PriceSnapshot, type SnapshotSource, summarize } from '../engine/snapshots';
+import {
+  APPLICATION_ID,
+  DATA_MIGRATIONS,
+  type DbKind,
+  LEGACY_KINDS,
+  LEGACY_MIGRATIONS,
+  type LegacyKind,
+  PRICES_MIGRATIONS,
+  SPLIT_VERSION,
+  TABLES,
+  USER_MIGRATIONS,
+} from './schema';
 
 export type { DbKind };
 export type Dbs = Record<DbKind, Database>;
@@ -28,8 +40,8 @@ const num = (v: SqlValue): number | null => (v === null || v === undefined ? nul
 const pragma = (db: Database, name: string) => Number(db.exec(`PRAGMA ${name}`)[0]?.values[0][0] ?? 0);
 const tables = (db: Database) => new Set((db.exec(`SELECT name FROM sqlite_master WHERE type = 'table'`)[0]?.values ?? []).map((r) => String(r[0])));
 
-const MIGRATIONS: Record<DbKind, string[]> = { data: DATA_MIGRATIONS, user: USER_MIGRATIONS };
-const KINDS: DbKind[] = ['data', 'user'];
+const MIGRATIONS: Record<DbKind, string[]> = { data: DATA_MIGRATIONS, user: USER_MIGRATIONS, prices: PRICES_MIGRATIONS };
+export const KINDS: DbKind[] = ['data', 'user', 'prices'];
 
 function runMigrations(db: Database, migrations: string[]): void {
   for (let v = pragma(db, 'user_version'); v < migrations.length; v++) {
@@ -45,7 +57,7 @@ function runMigrations(db: Database, migrations: string[]): void {
   }
 }
 
-/** What a database file holds: one of the two kinds, a legacy combined file, or nothing yet. */
+/** What a database file holds: one of the kinds, a legacy combined file, or nothing yet. */
 export function dbKind(db: Database): DbKind | 'legacy' | 'empty' {
   const appId = pragma(db, 'application_id');
   const kind = KINDS.find((k) => APPLICATION_ID[k] === appId);
@@ -68,14 +80,15 @@ export function migrate(db: Database, kind: DbKind): void {
 
 /**
  * Splits a legacy combined database into a data and a user database, each migrated to the latest
- * version. `open` creates a database from bytes (sql.js `new SQL.Database(bytes)`).
+ * version. The legacy file predates the prices database, so there is none to split off.
+ * `open` creates a database from bytes (sql.js `new SQL.Database(bytes)`).
  */
-export function splitLegacy(legacy: Database, open: (bytes: Uint8Array) => Database): Dbs {
+export function splitLegacy(legacy: Database, open: (bytes: Uint8Array) => Database): Pick<Dbs, LegacyKind> {
   runMigrations(legacy, LEGACY_MIGRATIONS);
   const bytes = legacy.export();
-  const split = (kind: DbKind): Database => {
+  const split = (kind: LegacyKind): Database => {
     const db = open(bytes);
-    for (const other of KINDS.filter((k) => k !== kind)) for (const t of TABLES[other]) db.exec(`DROP TABLE ${t}`);
+    for (const other of LEGACY_KINDS.filter((k) => k !== kind)) for (const t of TABLES[other]) db.exec(`DROP TABLE ${t}`);
     db.exec(`PRAGMA user_version = ${SPLIT_VERSION[kind]}`);
     db.exec(`PRAGMA application_id = ${APPLICATION_ID[kind]}`);
     db.exec('VACUUM');
@@ -86,15 +99,22 @@ export function splitLegacy(legacy: Database, open: (bytes: Uint8Array) => Datab
 }
 
 /**
- * Thin typed access to the two databases. Call `onChange` after writes so the caller can persist
+ * Thin typed access to the databases. Call `onChange` after writes so the caller can persist
  * the database that changed.
  */
 export class Repo {
+  readonly data: Database;
+  readonly user: Database;
+  readonly prices: Database;
+
   constructor(
-    readonly data: Database,
-    readonly user: Database,
+    dbs: Dbs,
     private onChange: (kind: DbKind) => void = () => {},
-  ) {}
+  ) {
+    this.data = dbs.data;
+    this.user = dbs.user;
+    this.prices = dbs.prices;
+  }
 
   private all(kind: DbKind, sql: string, params: SqlValue[] = []): Row[] {
     const stmt = this[kind].prepare(sql);
@@ -269,6 +289,68 @@ export class Repo {
       obs.ahMin,
       obs.observedAt,
     ]);
+  }
+
+  // Price snapshots (prices database, DEC-23) -------------------------------
+
+  /**
+   * Stores a snapshot with its derived stats. A snapshot whose uid is already stored is skipped.
+   * Returns whether it was added.
+   */
+  addSnapshot(snap: PriceSnapshot): boolean {
+    const sum = summarize(snap);
+    this.prices.run(
+      `INSERT OR IGNORE INTO price_snapshots
+        (uid, item_id, observed_at, ah_type, source, total_qty, levels, truncated, min_price, min_qty, market_value, confidence)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        snap.uid,
+        snap.itemId,
+        snap.observedAt,
+        snap.ahType,
+        snap.source,
+        snap.totalQty,
+        JSON.stringify(snap.levels.map((l) => [l.price, l.qty])),
+        snap.truncated ? 1 : 0,
+        sum.minPrice,
+        sum.minQty,
+        sum.marketValue,
+        sum.confidence,
+      ],
+    );
+    const added = this.prices.getRowsModified() > 0;
+    if (added) this.onChange('prices');
+    return added;
+  }
+
+  /** Snapshots, oldest first. Optionally for one item and from a moment on. */
+  listSnapshots(filter: { itemId?: number; since?: number } = {}): PriceSnapshot[] {
+    const where: string[] = [];
+    const params: SqlValue[] = [];
+    if (filter.itemId !== undefined) {
+      where.push('item_id = ?');
+      params.push(filter.itemId);
+    }
+    if (filter.since !== undefined) {
+      where.push('observed_at >= ?');
+      params.push(filter.since);
+    }
+    const sql = `SELECT * FROM price_snapshots ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY observed_at, id`;
+    return this.all('prices', sql, params).map((r) => ({
+      id: Number(r.id),
+      uid: String(r.uid),
+      itemId: Number(r.item_id),
+      observedAt: Number(r.observed_at),
+      ahType: r.ah_type === 'neutral' ? 'neutral' : 'faction',
+      source: String(r.source) as SnapshotSource,
+      totalQty: num(r.total_qty),
+      levels: json<[number, number][]>(r.levels, []).map(([price, qty]): PriceLevel => ({ price, qty })),
+      truncated: Number(r.truncated) === 1,
+    }));
+  }
+
+  deleteSnapshot(id: number): void {
+    this.run('prices', 'DELETE FROM price_snapshots WHERE id = ?', [id]);
   }
 
   // Workflows ---------------------------------------------------------------

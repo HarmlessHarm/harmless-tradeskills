@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG } from '../config';
+import { DEFAULT_CONFIG, withDefaults } from '../config';
 import { deShuffle, engineData, IDS } from '../test/fixtures';
-import { deposit, flip, netOnSale } from './ah';
+import { deposit, flip, listingMode, netOnSale, postingDeposit } from './ah';
+import type { Config } from './types';
 import { anyItem, anyItemId, deriveDisenchantRecipe, findDisenchantRule } from './disenchant';
 import { formatMoney, parseMoney } from './money';
 import { analyzeWorkflow, describeStep, insertBeforeConsumer, producersOf } from './workflow';
@@ -56,9 +57,44 @@ describe('AH channel', () => {
     const r = flip(cfg, { buyPrice: 10_000, sellPrice: 10_000, vendorSellEach: 0, durationKey: '2h', ahType: 'faction' });
     expect(r.failedListingsAbsorbed).toBe(-1);
   });
-  it('charges the minimum deposit per item, since every item is its own listing', () => {
+  it('charges the minimum deposit per auction', () => {
     const r = flip(cfg, { buyPrice: 100, sellPrice: 200, vendorSellEach: 1, durationKey: '8h', ahType: 'faction' });
     expect(r.costPerFailedListing).toBe(cfg.minDeposit);
+    const perItem = flip(cfg, { buyPrice: 100, sellPrice: 200, vendorSellEach: 1, durationKey: '8h', ahType: 'faction', qty: 10 });
+    expect(perItem.costPerFailedListing).toBe(10 * cfg.minDeposit);
+    const lot = flip(cfg, { buyPrice: 100, sellPrice: 200, vendorSellEach: 1, durationKey: '8h', ahType: 'faction', qty: 10, mode: 'lot' });
+    expect(lot.costPerFailedListing).toBe(cfg.minDeposit);
+  });
+  it('posts a lot as one auction with one deposit', () => {
+    // 20 items, vendor sell 20s, 8h faction: one deposit of 20 x 20s x 15% = 60s.
+    const input = { buyPrice: 10_000, sellPrice: 15_000, vendorSellEach: 2000, durationKey: '8h', ahType: 'faction' as const, qty: 20 };
+    const lot = flip(cfg, { ...input, mode: 'lot' });
+    expect(lot.deposit).toBe(6_000);
+    expect(lot.profitTotal).toBe(20 * 4_250);
+    expect(lot.profitFirstListing).toBe(4_250);
+    expect(lot.failedListingsAbsorbed).toBe(14);
+    // Rounding: per piece floors each small deposit, a lot floors once.
+    expect(postingDeposit(cfg, 'perItem', 7, 20, '8h', 'faction')).toBe(20 * 1);
+    expect(postingDeposit(cfg, 'lot', 7, 20, '8h', 'faction')).toBe(21);
+  });
+  it('spends the deposit on sale when it is not refunded', () => {
+    const noRefund = { ...cfg, depositRefundedOnSale: false };
+    const r = flip(noRefund, { buyPrice: 10_000, sellPrice: 15_000, vendorSellEach: 2000, durationKey: '8h', ahType: 'faction', qty: 20, mode: 'lot' });
+    expect(r.profitTotal).toBe(20 * 4_250 - 6_000);
+    expect(r.profitFirstListing).toBe(4_250 - 300);
+    // Break-even must also cover the 3s of deposit per item.
+    expect(netOnSale(noRefund, r.breakEvenSellPrice, 'faction')).toBeGreaterThanOrEqual(10_300);
+    expect(netOnSale(noRefund, r.breakEvenSellPrice - 1, 'faction')).toBeLessThan(10_300);
+  });
+  it('picks the listing mode by item class', () => {
+    expect(listingMode(cfg, 'armor')).toBe('perItem');
+    expect(listingMode(cfg, 'weapon')).toBe('perItem');
+    expect(listingMode(cfg, 'other')).toBe('lot');
+    expect(listingMode(cfg, undefined)).toBe('lot');
+  });
+  it('fills in listing modes missing from an older stored config', () => {
+    expect(withDefaults({ listingMode: { armor: 'lot' } as Config['listingMode'] }).listingMode).toEqual({ armor: 'lot', weapon: 'perItem', other: 'lot' });
+    expect(withDefaults({}).depositRefundedOnSale).toBe(true);
   });
 });
 
@@ -132,7 +168,11 @@ describe('workflow: DE shuffle', () => {
     const d = engineData();
     d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahMin: null, observedAt: 0 });
     const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
-    expect(r.batchDeposits).toBe(24 * deposit(d.config, 400, 1, '8h', 'faction'));
+    // Oil is not gear, so the 24 oils go up as one lot with one deposit.
+    expect(r.batchDeposits).toBe(deposit(d.config, 400, 24, '8h', 'faction'));
+    d.config = { ...d.config, listingMode: { ...d.config.listingMode, other: 'perItem' } };
+    const perItem = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
+    expect(perItem.batchDeposits).toBe(24 * deposit(d.config, 400, 1, '8h', 'faction'));
   });
 
   it('simulates a batch of 20 with an ordered percentile range', () => {

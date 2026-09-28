@@ -147,12 +147,26 @@ export interface AhDuration {
   depositRate: Record<AhType, number>;
 }
 
+/**
+ * How items are posted on the AH (DEC-22). 'lot': the whole quantity is one auction with one deposit
+ * and buyers take any number of units (commodities). 'perItem': every piece is its own auction.
+ */
+export type ListingMode = 'lot' | 'perItem';
+
 export interface Config {
   /** AH cut on sale, as a fraction, per AH type. */
   ahCut: Record<AhType, number>;
   durations: AhDuration[];
-  /** Minimum deposit per listing, in copper. */
+  /** Minimum deposit per auction, in copper. */
   minDeposit: Copper;
+  /** Whether the deposit comes back when the auction sells (REQ-5.2). It is always lost on expiry. */
+  depositRefundedOnSale: boolean;
+  /** How each item class is posted. */
+  listingMode: Record<ItemClass, ListingMode>;
+  /** When the AH rules above were last checked in game, as epoch ms. null means unverified. */
+  ahRulesVerifiedAt: number | null;
+  /** Profit wanted on a flip, as a fraction of the buy price. Sets the watchlist's "buy below". */
+  flipTargetMargin: number;
   /** Seconds of idle time added to every action (cast). */
   perActionOverheadSec: number;
   /** Seconds added once per batch (vendor walks, buying, posting). */
@@ -163,11 +177,18 @@ export interface Config {
   disenchantCastMs: number;
 }
 
-/** A saved flip-calculator item with the prices and settings last used for it (REQ-7.3). */
+/**
+ * Flip settings remembered for an item (REQ-7.3): the prices and settings last used for it.
+ * `favorite: false` keeps the settings of an item that is on the watchlist only because a workflow
+ * trades it; a missing flag (older data) means a favorite.
+ */
 export interface FlipFavorite {
+  favorite?: boolean;
   itemId: number;
   buyPrice: Copper | null;
   sellPrice: Copper | null;
   durationKey: string;
   ahType: AhType;
+  /** Number of items flipped. Older favorites have none and use 1. */
+  qty?: number;
 }

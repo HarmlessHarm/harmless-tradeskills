@@ -1,4 +1,4 @@
-import { deposit, netOnSale } from './ah';
+import { listingMode, netOnSale, postingDeposit } from './ah';
 import { anyItem, anyItemId, deriveDisenchantRecipe, isAnyItem } from './disenchant';
 import { expectedQty } from './items';
 import { price, type PriceContext } from './prices';
@@ -428,8 +428,9 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
   const batchDeposits = terminalOutputs
     .filter((x) => x.disposition === 'ah')
     .reduce((s, x) => {
-      const each = deposit(cfg, data.items.get(x.itemId)?.vendorSell ?? null, 1, wf.ahDuration, wf.ahType);
-      return s + Math.ceil(x.qtyPerUnit * batchSize - 1e-6) * each;
+      const item = data.items.get(x.itemId);
+      const qty = Math.ceil(x.qtyPerUnit * batchSize - 1e-6);
+      return s + postingDeposit(cfg, listingMode(cfg, item?.itemClass), item?.vendorSell ?? null, qty, wf.ahDuration, wf.ahType);
     }, 0);
   const batchTimeSec = batchSize * timePerUnitSec + cfg.perBatchOverheadSec;
   const batchProfit = profitPerUnit * batchSize;
@@ -439,7 +440,11 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
   if (anyInputs.length > 1) warnings.push('Only the first "any item" gets a buy limit; the others count as free.');
   if (missing.length) warnings.push('Some prices are missing and count as 0.');
   if (terminalOutputs.some((o) => o.disposition === 'ah'))
-    warnings.push('AH sales assume the item sells on the first listing (deposit refunded).');
+    warnings.push(
+      cfg.depositRefundedOnSale
+        ? 'AH sales assume the item sells on the first listing (deposit refunded).'
+        : 'AH sales assume the item sells on the first listing. Deposits are not refunded on sale in Settings, and profit does not include them yet.',
+    );
 
   const analysis: WorkflowAnalysis = {
     ok: true,

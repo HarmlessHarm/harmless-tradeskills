@@ -1,20 +1,39 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../config';
 import type { DbKind } from '../db/repo';
-import type { AhDuration, Config } from '../engine/types';
+import type { AhDuration, Config, ItemClass } from '../engine/types';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
-import { errorText, MoneyInput, NumberInput, Panel } from './common';
+import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { DisenchantPage } from './DisenchantPage';
 
-const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
-const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data' };
+const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal', prices: 'prices' };
+const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
 const KIND_CONTENTS: Record<DbKind, string> = {
   data: 'items, recipes, disenchant rules',
-  user: 'workflows, flip favorites, prices, settings',
+  user: 'workflows, workflow prices, flip favorites, settings',
+  prices: 'AH price snapshots',
 };
 
+/** "a", "a and b", "a, b and c". */
+const listText = (parts: string[]) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
+
 const pct = (x: number) => Math.round(x * 10000) / 100;
+
+const ITEM_CLASSES: { key: ItemClass; label: string }[] = [
+  { key: 'armor', label: 'Armor' },
+  { key: 'weapon', label: 'Weapons' },
+  { key: 'other', label: 'Everything else' },
+];
+
+/** The AH rules that "Reset to defaults" restores. */
+const AH_DEFAULTS: Partial<Config> = {
+  ahCut: DEFAULT_CONFIG.ahCut,
+  durations: DEFAULT_CONFIG.durations,
+  minDeposit: DEFAULT_CONFIG.minDeposit,
+  depositRefundedOnSale: DEFAULT_CONFIG.depositRefundedOnSale,
+  listingMode: DEFAULT_CONFIG.listingMode,
+};
 
 const SECTIONS = [
   { key: 'general', label: 'General', sub: 'Auction house, time', Section: GeneralSettings },
@@ -56,11 +75,27 @@ function GeneralSettings() {
   const { config, mutate } = useStore();
   const save = (patch: Partial<Config>) => mutate((repo) => repo.saveConfig({ ...config, ...patch }));
   const setDuration = (i: number, patch: Partial<AhDuration>) => save({ durations: config.durations.map((d, k) => (k === i ? { ...d, ...patch } : d)) });
+  const verifiedAt = config.ahRulesVerifiedAt;
 
   return (
     <div className="stack narrow">
-      <Panel title="Auction house" actions={<button onClick={() => save({ ahCut: DEFAULT_CONFIG.ahCut, durations: DEFAULT_CONFIG.durations, minDeposit: DEFAULT_CONFIG.minDeposit })}>Reset to defaults</button>}>
-        <p className="small warn">Defaults are Classic based placeholders. Verify them in WoW Forever.</p>
+      <Panel
+        title="Auction house"
+        actions={
+          <>
+            <button onClick={() => save({ ahRulesVerifiedAt: Date.now() })}>{verifiedAt ? 'Checked again today' : 'Mark as checked in game'}</button>
+            <button onClick={() => save({ ...AH_DEFAULTS, ahRulesVerifiedAt: null })}>Reset to defaults</button>
+          </>
+        }
+      >
+        {verifiedAt ? (
+          <p className="small muted">Checked in game on {new Date(verifiedAt).toLocaleDateString()}.</p>
+        ) : (
+          <p className="small warn">
+            Not checked yet. Defaults are placeholders: Classic based rates, and the modern AH listing rules (commodities as one lot, gear per piece). Verify them in WoW
+            Forever, then mark them as checked.
+          </p>
+        )}
         <table className="form-table">
           <thead>
             <tr>
@@ -98,9 +133,46 @@ function GeneralSettings() {
                 <MoneyInput value={config.minDeposit} allowEmpty={false} onChange={(v) => save({ minDeposit: v ?? 0 })} />
               </td>
             </tr>
+            <tr>
+              <th>Deposit on sale</th>
+              <td colSpan={2}>
+                <Segmented
+                  value={config.depositRefundedOnSale ? 'refunded' : 'kept'}
+                  options={[
+                    { value: 'refunded', label: 'Refunded' },
+                    { value: 'kept', label: 'Kept by the AH' },
+                  ]}
+                  onChange={(v) => save({ depositRefundedOnSale: v === 'refunded' })}
+                />
+              </td>
+            </tr>
           </tbody>
         </table>
-        <p className="small muted">Deposit is a percentage of the item's vendor sell price per listing.</p>
+        <p className="small muted">Deposit is a percentage of the vendor sell price of everything in the auction, with a minimum per auction. It is always lost when the auction expires.</p>
+        <h3>How items are posted</h3>
+        <table className="form-table">
+          <tbody>
+            {ITEM_CLASSES.map(({ key, label }) => (
+              <tr key={key}>
+                <th>{label}</th>
+                <td>
+                  <Segmented
+                    value={config.listingMode[key]}
+                    options={[
+                      { value: 'lot', label: 'One auction per lot' },
+                      { value: 'perItem', label: 'One auction per piece' },
+                    ]}
+                    onChange={(v) => save({ listingMode: { ...config.listingMode, [key]: v } })}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="small muted">
+          One auction per lot: the whole quantity is one auction with one deposit, and buyers take any number (commodities on the modern AH). One auction per piece:
+          every item is its own auction with its own deposit and minimum deposit.
+        </p>
       </Panel>
 
       <Panel title="Time and simulation">
@@ -141,11 +213,11 @@ function DataSettings() {
   const [clearMsg, setClearMsg] = useState<string | null>(null);
 
   const clear = async (kinds: DbKind[]) => {
-    const what = kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`).join(' and ');
+    const what = listText(kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`));
     if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
     try {
       await clearDb(kinds);
-      setClearMsg(`Cleared ${kinds.map((k) => KIND_LABEL[k]).join(' and ')}.`);
+      setClearMsg(`Cleared ${listText(kinds.map((k) => KIND_LABEL[k]))}.`);
     } catch (err) {
       setClearMsg(`Clearing failed: ${errorText(err)}`);
     }
@@ -189,12 +261,14 @@ function DataSettings() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as two SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
-          can be shared with other players. <b>Personal data</b> (workflows, flip favorites, prices, settings) is yours.
-          Export both for backups or to move to another machine. Importing a file replaces only the data it holds.
+          Everything is stored in this browser as three SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
+          can be shared with other players. <b>AH prices</b> (price snapshots for flipping) can be shared with players on your
+          realm. <b>Personal data</b> (workflows, workflow prices, flip favorites, settings) is yours. Export all three for backups
+          or to move to another machine. Importing a file replaces only the data it holds.
         </p>
         <div className="add-row">
           <button onClick={() => download('data')}>Export game data</button>
+          <button onClick={() => download('prices')}>Export AH prices</button>
           <button onClick={() => download('user')}>Export personal data</button>
           <button onClick={() => fileRef.current?.click()}>Import .sqlite</button>
           <input
@@ -209,7 +283,7 @@ function DataSettings() {
               if (!confirm('Replace the data in this browser with the data in the imported file?')) return;
               try {
                 const kinds = await importDb(new Uint8Array(await file.arrayBuffer()));
-                setDataMsg(`Imported ${kinds.map((k) => KIND_LABEL[k]).join(' and ')} from ${file.name}.`);
+                setDataMsg(`Imported ${listText(kinds.map((k) => KIND_LABEL[k]))} from ${file.name}.`);
               } catch (err) {
                 setDataMsg(`Import failed: ${errorText(err)}`);
               }
@@ -225,8 +299,9 @@ function DataSettings() {
         </p>
         <div className="add-row">
           <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+          <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
           <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
-          <button className="danger" onClick={() => clear(['data', 'user'])}>Clear all data</button>
+          <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>
           {clearMsg && <span className="small muted">{clearMsg}</span>}
         </div>
       </Panel>

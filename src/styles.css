@@ -411,6 +411,14 @@ a.wf-item {
 .r {
   text-align: right;
 }
+/* `.table th` sets left alignment and is more specific than `.r`: right-aligned columns need their header on the right too. */
+.table th.r {
+  text-align: right;
+}
+/* Digits of equal width, so numbers line up down a column. */
+.table td.r {
+  font-variant-numeric: tabular-nums;
+}
 .actions {
   text-align: right;
   white-space: nowrap;
@@ -1002,31 +1010,145 @@ th.r .sort-btn {
   white-space: nowrap;
 }
 
-/* AH flip: buy and sell side by side, two columns even on narrow screens. */
-.form-grid.flip-form {
-  grid-template-columns: 1fr 1fr;
+/* AH flip watchlist */
+.watchlist .watch-row {
+  cursor: pointer;
 }
-.flip-form .span-2 {
-  grid-column: span 2;
+.watchlist .watch-row:hover td {
+  background: rgba(255, 255, 255, 0.02);
 }
-.flip-form .money-input,
-.flip-form select {
-  width: 100%;
+.watchlist td .sub {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
 }
-.picker-row {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+.watchlist td.deal > .money {
+  color: var(--pos);
+  font-weight: 600;
 }
-.picker-row .item-picker {
-  flex: 1;
-  width: auto;
-  min-width: 0;
+.watchlist .buy-below .money {
+  color: var(--gold);
+  font-weight: 600;
+}
+.caret {
+  display: inline-block;
+  width: 14px;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.caret.open {
+  transform: rotate(90deg);
+  color: var(--gold);
 }
 .row-icon.fav {
   color: var(--gold);
   font-size: 16px;
 }
-.fav-chip.on {
-  border-color: var(--gold-dim);
+.badge.wf {
+  color: #b9a4ff;
+  border-color: #3d3560;
+  margin-left: 6px;
+}
+.n-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+  color: #7fb8ff;
+  border: 1px solid #25405f;
+  background: rgba(127, 184, 255, 0.1);
+}
+.n-badge.thin {
+  color: var(--warn);
+  border-color: #5a4a1f;
+  background: rgba(240, 182, 74, 0.12);
+}
+.pct-input {
+  width: 64px;
+}
+/* Header controls: centre everything on one line and match the segmented control to input height. */
+.panel-actions .segmented {
+  align-self: center;
+}
+.panel-actions .segmented button {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.panel-actions label.inline {
+  margin: 0;
+}
+.quick-calc {
+  padding: 12px 0 2px;
+  /* Stay in view and wrap to the screen when the table scrolls sideways on narrow screens. */
+  position: sticky;
+  left: 0;
+  max-width: calc(100vw - 110px);
+}
+.calc-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+.calc-inputs label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.calc-inputs label > * {
+  color: var(--text);
+}
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  width: fit-content;
+}
+.verdict.good {
+  background: rgba(95, 208, 104, 0.08);
+  border: 1px solid #2f5a34;
+}
+.verdict.bad {
+  background: rgba(255, 107, 94, 0.07);
+  border: 1px solid #5c2a26;
+}
+.pill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 9px;
+}
+.pill.deal {
+  color: var(--pos);
+  background: rgba(95, 208, 104, 0.15);
+}
+.pill.skip {
+  color: var(--neg);
+  background: rgba(255, 107, 94, 0.14);
+}
+.calc-kv {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 4px 24px;
+  margin: 0;
+  font-size: 13px;
+}
+.calc-kv dt {
+  color: var(--muted);
+}
+.calc-kv dd {
+  margin: 0;
 }
