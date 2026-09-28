@@ -673,3 +673,28 @@ label.inline {
     padding: 0 12px;
   }
 }
+
+/* Bulk import */
+.paste-zone {
+  width: 100%;
+  resize: vertical;
+  border-style: dashed;
+  text-align: center;
+  padding-top: 18px;
+}
+.bulk-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.bulk-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.bulk-list label.inline {
+  margin: 2px 0;
+}

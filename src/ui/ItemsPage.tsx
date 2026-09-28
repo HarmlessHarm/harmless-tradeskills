@@ -6,6 +6,7 @@ import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { parseWowheadRef, tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, Money, MoneyInput, NumberInput, Panel } from './common';
+import { BulkImport } from './BulkImport';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 
 export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
@@ -58,6 +59,7 @@ export function ItemsPage() {
   const [editing, setEditing] = useState<number | null>(null);
   const [newId, setNewId] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
+  const [bulk, setBulk] = useState(false);
 
   const f = filter.trim().toLowerCase();
   const rows = itemRecords
@@ -68,7 +70,16 @@ export function ItemsPage() {
 
   return (
     <div className="stack">
-      <Panel title="Items" actions={<input className="search" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />}>
+      {bulk && <BulkImport onClose={() => setBulk(false)} />}
+      <Panel
+        title="Items"
+        actions={
+          <>
+            <input className="search" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            {!bulk && <button onClick={() => setBulk(true)}>Bulk import</button>}
+          </>
+        }
+      >
         <ImportBox defaultType="item" />
         <div className="table-wrap">
           <table className="table">

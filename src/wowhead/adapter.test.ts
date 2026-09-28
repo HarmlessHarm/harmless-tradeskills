@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText } from './adapter';
+import { extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText } from './adapter';
 
 /*
  * These fixtures follow the shape of Wowhead tooltip responses but were written by hand, because the
@@ -43,6 +43,32 @@ describe('parseWowheadRef', () => {
   it('uses the fallback type for bare IDs', () => {
     expect(parseWowheadRef(' 2589 ', 'item')).toEqual({ type: 'item', id: 2589 });
     expect(parseWowheadRef('nonsense', 'item')).toBeNull();
+  });
+});
+
+describe('extractWowheadRefs', () => {
+  it('reads item and spell links from a copied listview selection', () => {
+    // Shape of a browser clipboard copy of two recipe rows: icon link, name link, reagent links, other links.
+    const html = `<table><tbody>
+      <tr><td><a href="https://www.wowhead.com/forever/item=4307/heavy-linen-gloves"><ins></ins></a></td>
+      <td><a href="https://www.wowhead.com/forever/spell=3840/heavy-linen-gloves">Heavy Linen Gloves</a></td>
+      <td><a href="/forever/item=2996/bolt-of-linen-cloth">Bolt of Linen Cloth</a> 2 <a href="/forever/item=2320">Coarse&nbsp;Thread</a></td>
+      <td><a href="/forever/skill=197">Tailoring</a> <a href="/forever/npc=1103">Eldrin</a></td></tr>
+      <tr><td><a href="https://www.wowhead.com/forever/item=4307/heavy-linen-gloves">Heavy Linen Gloves</a></td></tr>
+    </tbody></table>`;
+    expect(extractWowheadRefs(html)).toEqual([
+      { type: 'item', id: 4307, name: 'Heavy Linen Gloves' },
+      { type: 'spell', id: 3840, name: 'Heavy Linen Gloves' },
+      { type: 'item', id: 2996, name: 'Bolt of Linen Cloth' },
+      { type: 'item', id: 2320, name: 'Coarse Thread' },
+    ]);
+  });
+  it('falls back to URLs in plain text', () => {
+    const text = 'https://www.wowhead.com/forever/spell=25124/minor-wizard-oil\nhttps://www.wowhead.com/forever/item=10940';
+    expect(extractWowheadRefs('', text)).toEqual([
+      { type: 'spell', id: 25124, name: null },
+      { type: 'item', id: 10940, name: null },
+    ]);
   });
 });
 

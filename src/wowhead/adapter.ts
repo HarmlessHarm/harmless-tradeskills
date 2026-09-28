@@ -28,6 +28,39 @@ export function parseWowheadRef(input: string, fallbackType: WowheadType): Wowhe
   return null;
 }
 
+export interface PastedRef extends WowheadRef {
+  /** Link text, when the paste had one. */
+  name: string | null;
+}
+
+const decodeEntities = (s: string) =>
+  s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+/**
+ * Find every Wowhead item and spell link in something copied from a Wowhead page, such as rows
+ * selected in a listview table. Browsers put the selection on the clipboard as HTML, which keeps
+ * the links; plain text only keeps URLs that were written out. Deduplicated, in page order.
+ */
+export function extractWowheadRefs(html: string, text = ''): PastedRef[] {
+  const found = new Map<string, PastedRef>();
+  const add = (type: WowheadType, id: number, name: string | null) => {
+    const key = `${type}:${id}`;
+    const existing = found.get(key);
+    if (!existing) found.set(key, { type, id, name: name || null });
+    else if (!existing.name && name) existing.name = name;
+  };
+  const anchors = /<a\b[^>]*\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (let m = anchors.exec(html); m; m = anchors.exec(html)) {
+    const ref = /[/?&](item|spell)=(\d+)/i.exec(m[1]);
+    if (!ref) continue;
+    const name = decodeEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+    add(ref[1].toLowerCase() as WowheadType, Number(ref[2]), name);
+  }
+  const urls = /wowhead\.com\/\S*?\b(item|spell)=(\d+)/gi;
+  for (let m = urls.exec(text); m; m = urls.exec(text)) add(m[1].toLowerCase() as WowheadType, Number(m[2]), null);
+  return [...found.values()];
+}
+
 export interface TooltipResponse {
   name: string;
   quality?: number;

@@ -5,6 +5,7 @@ import { importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, ItemPicker, NumberInput, Panel } from './common';
+import { BulkImport } from './BulkImport';
 import { ImportBox } from './ItemsPage';
 
 const KINDS = ['craft', 'disenchant', 'convert'];
@@ -13,6 +14,7 @@ export function RecipesPage() {
   const { recipeRecords, mutate } = useStore();
   const [editing, setEditing] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  const [bulk, setBulk] = useState(false);
 
   const f = filter.trim().toLowerCase();
   const rows = recipeRecords
@@ -42,11 +44,13 @@ export function RecipesPage() {
 
   return (
     <div className="stack">
+      {bulk && <BulkImport onClose={() => setBulk(false)} />}
       <Panel
         title="Recipes"
         actions={
           <>
             <input className="search" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
+            {!bulk && <button onClick={() => setBulk(true)}>Bulk import</button>}
             <button onClick={createManual}>New by hand</button>
           </>
         }
