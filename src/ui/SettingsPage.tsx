@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../config';
 import type { DbKind } from '../db/repo';
-import type { AhDuration, Config } from '../engine/types';
+import type { AhDuration, Config, ItemClass } from '../engine/types';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
-import { errorText, MoneyInput, NumberInput, Panel } from './common';
+import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { DisenchantPage } from './DisenchantPage';
 
 const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
@@ -15,6 +15,21 @@ const KIND_CONTENTS: Record<DbKind, string> = {
 };
 
 const pct = (x: number) => Math.round(x * 10000) / 100;
+
+const ITEM_CLASSES: { key: ItemClass; label: string }[] = [
+  { key: 'armor', label: 'Armor' },
+  { key: 'weapon', label: 'Weapons' },
+  { key: 'other', label: 'Everything else' },
+];
+
+/** The AH rules that "Reset to defaults" restores. */
+const AH_DEFAULTS: Partial<Config> = {
+  ahCut: DEFAULT_CONFIG.ahCut,
+  durations: DEFAULT_CONFIG.durations,
+  minDeposit: DEFAULT_CONFIG.minDeposit,
+  depositRefundedOnSale: DEFAULT_CONFIG.depositRefundedOnSale,
+  listingMode: DEFAULT_CONFIG.listingMode,
+};
 
 const SECTIONS = [
   { key: 'general', label: 'General', sub: 'Auction house, time', Section: GeneralSettings },
@@ -56,11 +71,27 @@ function GeneralSettings() {
   const { config, mutate } = useStore();
   const save = (patch: Partial<Config>) => mutate((repo) => repo.saveConfig({ ...config, ...patch }));
   const setDuration = (i: number, patch: Partial<AhDuration>) => save({ durations: config.durations.map((d, k) => (k === i ? { ...d, ...patch } : d)) });
+  const verifiedAt = config.ahRulesVerifiedAt;
 
   return (
     <div className="stack narrow">
-      <Panel title="Auction house" actions={<button onClick={() => save({ ahCut: DEFAULT_CONFIG.ahCut, durations: DEFAULT_CONFIG.durations, minDeposit: DEFAULT_CONFIG.minDeposit })}>Reset to defaults</button>}>
-        <p className="small warn">Defaults are Classic based placeholders. Verify them in WoW Forever.</p>
+      <Panel
+        title="Auction house"
+        actions={
+          <>
+            <button onClick={() => save({ ahRulesVerifiedAt: Date.now() })}>{verifiedAt ? 'Checked again today' : 'Mark as checked in game'}</button>
+            <button onClick={() => save({ ...AH_DEFAULTS, ahRulesVerifiedAt: null })}>Reset to defaults</button>
+          </>
+        }
+      >
+        {verifiedAt ? (
+          <p className="small muted">Checked in game on {new Date(verifiedAt).toLocaleDateString()}.</p>
+        ) : (
+          <p className="small warn">
+            Not checked yet. Defaults are placeholders: Classic based rates, and the modern AH listing rules (commodities as one lot, gear per piece). Verify them in WoW
+            Forever, then mark them as checked.
+          </p>
+        )}
         <table className="form-table">
           <thead>
             <tr>
@@ -98,9 +129,46 @@ function GeneralSettings() {
                 <MoneyInput value={config.minDeposit} allowEmpty={false} onChange={(v) => save({ minDeposit: v ?? 0 })} />
               </td>
             </tr>
+            <tr>
+              <th>Deposit on sale</th>
+              <td colSpan={2}>
+                <Segmented
+                  value={config.depositRefundedOnSale ? 'refunded' : 'kept'}
+                  options={[
+                    { value: 'refunded', label: 'Refunded' },
+                    { value: 'kept', label: 'Kept by the AH' },
+                  ]}
+                  onChange={(v) => save({ depositRefundedOnSale: v === 'refunded' })}
+                />
+              </td>
+            </tr>
           </tbody>
         </table>
-        <p className="small muted">Deposit is a percentage of the item's vendor sell price per listing.</p>
+        <p className="small muted">Deposit is a percentage of the vendor sell price of everything in the auction, with a minimum per auction. It is always lost when the auction expires.</p>
+        <h3>How items are posted</h3>
+        <table className="form-table">
+          <tbody>
+            {ITEM_CLASSES.map(({ key, label }) => (
+              <tr key={key}>
+                <th>{label}</th>
+                <td>
+                  <Segmented
+                    value={config.listingMode[key]}
+                    options={[
+                      { value: 'lot', label: 'One auction per lot' },
+                      { value: 'perItem', label: 'One auction per piece' },
+                    ]}
+                    onChange={(v) => save({ listingMode: { ...config.listingMode, [key]: v } })}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="small muted">
+          One auction per lot: the whole quantity is one auction with one deposit, and buyers take any number (commodities on the modern AH). One auction per piece:
+          every item is its own auction with its own deposit and minimum deposit.
+        </p>
       </Panel>
 
       <Panel title="Time and simulation">

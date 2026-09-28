@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { flip } from '../engine/ah';
+import { flip, listingMode } from '../engine/ah';
 import { formatMoney } from '../engine/money';
 import type { AhType, FlipFavorite } from '../engine/types';
 import { useStore } from '../state/store';
-import { ItemName, ItemPicker, Money, MoneyInput, Panel, Segmented } from './common';
+import { ItemName, ItemPicker, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
 
 type FlipSettings = Omit<FlipFavorite, 'itemId'>;
 
 /**
- * AH flip calculator (REQ-7). Prices are per item: the AH lists every item as its own stack of one,
- * so there is no stack size. Favorite items remember the prices and settings last used for them.
+ * AH flip calculator (REQ-7). Prices are per item. How the quantity is posted (one auction for the lot,
+ * or one per piece) follows the item's class and the AH rules in Settings (DEC-22).
+ * Favorite items remember the prices and settings last used for them.
  */
 export function FlipPage() {
   const { config, engine, prices, flipFavorites, mutate } = useStore();
@@ -19,11 +20,14 @@ export function FlipPage() {
   const [sell, setSell] = useState<number | null>(null);
   const [ahType, setAhType] = useState<AhType>('faction');
   const [duration, setDuration] = useState(defaultDuration);
+  const [qty, setQty] = useState(1);
 
   const item = itemId !== null ? engine.items.get(itemId) : undefined;
   const vendorSell = item?.vendorSell ?? null;
   const favorite = flipFavorites.find((f) => f.itemId === itemId);
-  const r = buy !== null && sell !== null ? flip(config, { buyPrice: buy, sellPrice: sell, vendorSellEach: vendorSell, durationKey: duration, ahType }) : null;
+  const mode = listingMode(config, item?.itemClass);
+  const r = buy !== null && sell !== null ? flip(config, { buyPrice: buy, sellPrice: sell, vendorSellEach: vendorSell, durationKey: duration, ahType, qty, mode }) : null;
+  const lot = qty > 1;
   const ahNow = itemId !== null ? prices.find((p) => p.itemId === itemId)?.ahPrice : null;
 
   const saveFavorites = (next: FlipFavorite[]) => mutate((repo) => repo.saveFlipFavorites(next));
@@ -33,6 +37,7 @@ export function FlipPage() {
     if ('sellPrice' in patch) setSell(patch.sellPrice ?? null);
     if (patch.durationKey !== undefined) setDuration(patch.durationKey);
     if (patch.ahType !== undefined) setAhType(patch.ahType);
+    if (patch.qty !== undefined) setQty(patch.qty);
     if (favorite) saveFavorites(flipFavorites.map((f) => (f === favorite ? { ...f, ...patch } : f)));
   };
   const load = (fav: FlipFavorite) => {
@@ -40,6 +45,7 @@ export function FlipPage() {
     setBuy(fav.buyPrice);
     setSell(fav.sellPrice);
     setAhType(fav.ahType);
+    setQty(fav.qty ?? 1);
     setDuration(config.durations.some((d) => d.key === fav.durationKey) ? fav.durationKey : defaultDuration);
   };
   const pickItem = (id: number | null) => {
@@ -50,7 +56,7 @@ export function FlipPage() {
   const toggleFavorite = () => {
     if (itemId === null) return;
     if (favorite) saveFavorites(flipFavorites.filter((f) => f !== favorite));
-    else saveFavorites([...flipFavorites, { itemId, buyPrice: buy, sellPrice: sell, durationKey: duration, ahType }]);
+    else saveFavorites([...flipFavorites, { itemId, buyPrice: buy, sellPrice: sell, durationKey: duration, ahType, qty }]);
   };
 
   return (
@@ -78,8 +84,9 @@ export function FlipPage() {
       )}
       <Panel title="AH flip">
         <p className="small muted">
-          Prices are per item: every item is listed as its own stack of one, so each item pays its own deposit. The deposit comes from the item's vendor sell price and
-          is lost when a listing expires.
+          Prices are per item. {mode === 'lot' ? 'This item is posted as one auction for the whole quantity, with one deposit.' : 'This item is posted one auction per piece, each with its own deposit.'}{' '}
+          The deposit comes from the vendor sell price, is {config.depositRefundedOnSale ? 'refunded on sale' : 'kept by the AH even on sale'} and is lost when the auction expires.
+          {config.ahRulesVerifiedAt === null && <span className="warn"> AH rules are not checked in game yet (Settings).</span>}
         </p>
         <div className="form-grid flip-form">
           <label className="span-2">
@@ -105,6 +112,10 @@ export function FlipPage() {
           <label>
             Sell price each
             <MoneyInput value={sell} onChange={(v) => change({ sellPrice: v })} placeholder={ahNow ? `AH price: ${formatMoney(ahNow)}` : 'e.g. 1g 20s'} />
+          </label>
+          <label>
+            Quantity
+            <NumberInput value={qty} min={1} step={1} onChange={(v) => change({ qty: Math.max(1, Math.floor(v ?? 1)) })} />
           </label>
           <label>
             Duration
@@ -137,7 +148,7 @@ export function FlipPage() {
               <span className="kpi-value">
                 {r.failedListingsAbsorbed === null ? 'any' : r.failedListingsAbsorbed < 0 ? <span className="neg">loses money</span> : r.failedListingsAbsorbed}
               </span>
-              <span className="kpi-sub">relists before the flip stops paying</span>
+              <span className="kpi-sub">{lot ? 'times the whole lot can expire' : 'relists'} before the flip stops paying</span>
             </div>
             <div className="kpi">
               <span className="kpi-label">Profit per item if it sells first time</span>
@@ -145,7 +156,7 @@ export function FlipPage() {
                 <Money value={r.profitFirstListing} signed />
               </span>
               <span className="kpi-sub">
-                after <Money value={r.cut} /> cut
+                after <Money value={r.cut} /> cut{lot && <>, <Money value={r.profitTotal} signed /> for all {r.qty}</>}
               </span>
             </div>
             <div className="kpi">
@@ -154,7 +165,7 @@ export function FlipPage() {
                 <Money value={r.costPerFailedListing} />
               </span>
               <span className="kpi-sub">
-                lost deposit per item
+                lost deposit{lot ? (r.mode === 'lot' ? ' for the lot (one auction)' : ` for ${r.qty} auctions`) : ''}
                 {vendorSell === null && <> ({item ? 'vendor price unknown' : 'no item picked'}, minimum deposit)</>}
               </span>
             </div>

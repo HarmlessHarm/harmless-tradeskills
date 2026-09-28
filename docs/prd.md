@@ -54,7 +54,9 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-4.3**: All price lookups go through one resolver function so modifiers (e.g. reputation) can be added later. Stored vendor prices are always base prices. [ref: DEC-8]
 - **REQ-5** (MUST): AH fee model as a reusable sell channel. [ref: DEC-13]
   - **REQ-5.1**: Cut on sale, deposit per listing duration, faction vs neutral AH; rates in configuration, not code.
-  - **REQ-5.2**: Deposit is refunded on sale and lost on expiry.
+  - **REQ-5.2**: Deposit is lost on expiry. Whether it is refunded on sale is a setting (default: refunded).
+  - **REQ-5.3**: Per item class (armor, weapon, other), a setting says whether a quantity is posted as one auction with one deposit (a lot, like commodities on the modern AH) or as one auction per piece. The minimum deposit applies per auction. [ref: DEC-22]
+  - **REQ-5.4**: Settings record when the AH rules were last checked in game; until then the app flags them as unverified.
 - **REQ-6** (MUST): Workflows. [ref: DEC-9]
   - **REQ-6.1**: Create, save, edit and delete workflows: an ordered list of recipe steps, a buy source (AH or vendor) for every input no step produces, and a disposition (AH, vendor, keep) for every output no step consumes.
   - **REQ-6.2**: The engine links steps automatically: an input produced by an earlier step comes from that step, otherwise it is bought.
@@ -65,8 +67,8 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-6.7** (MAY): Show leftover items from a simulated batch. [ref: DEC-11]
   - **REQ-6.8** (SHOULD): A step can disenchant any item of a quality, armor vs weapon and item level band. Its item is not priced; instead the workflow shows the most to pay per item: break-even, safe (worst case breaks even) and for a target gold per hour. [ref: DEC-20]
 - **REQ-7** (MUST): AH flip calculator. Only favorites persist; flips themselves are not tracked. [ref: DEC-13]
-  - **REQ-7.1**: Inputs: buy and expected sell price per item, listing duration, faction or neutral AH, and the item (its vendor sell price sets the deposit). There is no stack size: the AH lists every item as its own stack of one, so each item pays its own deposit (and the minimum deposit applies per item).
-  - **REQ-7.2**: Outputs, per item: profit if it sells on the first listing, cost per failed listing, and the number of relists until the flip breaks even.
+  - **REQ-7.1**: Inputs: buy and expected sell price per item, quantity, listing duration, faction or neutral AH, and the item (its vendor sell price sets the deposit, its class sets whether the quantity is posted as one lot or per piece, REQ-5.3).
+  - **REQ-7.2**: Outputs: profit per item and for the whole quantity if it sells on the first listing, cost per failed listing (the deposit for posting the quantity once), and the number of relists until the flip breaks even.
   - **REQ-7.3**: Favorite items: star an item to keep it in a quick-pick list that remembers its last buy price, sell price, duration and AH type.
 
 ## Non-functional requirements

@@ -130,3 +130,9 @@
 - **Why**: A shared file is then just the other player's game data export, with nothing to filter. Prices and settings stay personal: prices are observations of one player's market and go stale, and settings include personal time overheads.
 - **Migration**: The old combined file (no application_id) is brought up to date with the frozen legacy migrations, copied into both files and the other kind's tables dropped. This happens on first load and when importing an old export.
 - **Limitation**: Importing replaces; it does not merge someone else's game data into yours.
+
+## DEC-22: Configurable AH listing rules (lot vs per piece)
+- **Context**: The flip calculator assumed every item is listed as its own stack of one, each paying its own deposit. WoW Forever uses the modern AH: commodities are posted as one auction of the whole quantity and bought per unit, gear is posted per piece. The exact deposit and cut rules are not verified in game yet (#19).
+- **Chosen**: Keep the fee model generic and put every rule in config: cut and deposit rates per duration and AH type (as before), minimum deposit per auction, whether the deposit is refunded on sale, and a listing mode per item class (`lot` or `perItem`). Defaults: armor and weapons per piece, everything else as a lot, deposit refunded. Settings store when the rules were last checked in game, and the flip page warns until then.
+- **Why**: Updating the rules after checking in game is then a Settings change, not a code change (NFR-5). Item class is the only item property we have that separates commodities from gear.
+- **Limitation**: A lot is assumed to expire as a whole (worst case); partial sales of a lot are not modelled. Items with the wrong class need a class override on the item. When the deposit is not refunded, workflow profit does not subtract it yet (a warning says so).
