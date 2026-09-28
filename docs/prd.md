@@ -63,9 +63,10 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-6.5**: Show a P5 / median / P95 range for a batch of N via simulation; P5 (worst case) is visually prominent. [ref: DEC-10]
   - **REQ-6.6**: Show time per unit as cast time x runs per unit plus a configurable per-action overhead, and time per batch including a configurable per-batch overhead; show gold/hour for the batch. [ref: DEC-12]
   - **REQ-6.7** (MAY): Show leftover items from a simulated batch. [ref: DEC-11]
-- **REQ-7** (MUST): AH flip calculator (no persistence). [ref: DEC-13]
-  - **REQ-7.1**: Inputs: buy price, expected sell price, listing duration, faction or neutral AH (and item, for the deposit's vendor price basis).
-  - **REQ-7.2**: Outputs: profit if it sells on the first listing, cost per failed listing, and the number of relists until the flip breaks even.
+- **REQ-7** (MUST): AH flip calculator. Only favorites persist; flips themselves are not tracked. [ref: DEC-13]
+  - **REQ-7.1**: Inputs: buy and expected sell price per item, listing duration, faction or neutral AH, and the item (its vendor sell price sets the deposit). There is no stack size: the AH lists every item as its own stack of one, so each item pays its own deposit (and the minimum deposit applies per item).
+  - **REQ-7.2**: Outputs, per item: profit if it sells on the first listing, cost per failed listing, and the number of relists until the flip breaks even.
+  - **REQ-7.3**: Favorite items: star an item to keep it in a quick-pick list that remembers its last buy price, sell price, duration and AH type.
 
 ## Non-functional requirements
 - **NFR-1** (MUST): Single-user personal tool.

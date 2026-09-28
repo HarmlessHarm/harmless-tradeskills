@@ -77,4 +77,12 @@ describe('repo', () => {
     repo.addPrice({ itemId: 1, ahPrice: 1, ahPessimistic: null, observedAt: 1 });
     expect(n).toBe(1);
   });
+
+  it('round trips flip favorites', async () => {
+    const repo = await freshRepo();
+    expect(repo.listFlipFavorites()).toEqual([]);
+    const favs = [{ itemId: 4306, buyPrice: 500, sellPrice: null, durationKey: '8h', ahType: 'neutral' as const }];
+    repo.saveFlipFavorites(favs);
+    expect(repo.listFlipFavorites()).toEqual(favs);
+  });
 });

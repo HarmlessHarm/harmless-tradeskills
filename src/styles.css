@@ -862,3 +862,32 @@ th.r .sort-btn {
 .table .check {
   user-select: none;
 }
+
+/* AH flip: buy and sell side by side, two columns even on narrow screens. */
+.form-grid.flip-form {
+  grid-template-columns: 1fr 1fr;
+}
+.flip-form .span-2 {
+  grid-column: span 2;
+}
+.flip-form .money-input,
+.flip-form select {
+  width: 100%;
+}
+.picker-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.picker-row .item-picker {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.row-icon.fav {
+  color: var(--gold);
+  font-size: 16px;
+}
+.fav-chip.on {
+  border-color: var(--gold-dim);
+}
