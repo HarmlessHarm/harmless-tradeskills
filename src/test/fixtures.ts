@@ -81,7 +81,7 @@ export const deRules: DisenchantRule[] = [
   },
 ];
 
-export const prices: PriceObservation[] = [{ itemId: IDS.linen, ahPrice: 15, ahPessimistic: null, observedAt: 0 }];
+export const prices: PriceObservation[] = [{ itemId: IDS.linen, ahPrice: 15, ahMin: null, observedAt: 0 }];
 
 export function engineData(overrides: Partial<EngineData> = {}): EngineData {
   return {

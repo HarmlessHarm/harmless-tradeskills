@@ -3,15 +3,15 @@ import { setAhPrice, setVendorBuy } from '../state/actions';
 import { Money, MoneyInput, PriceAge } from './common';
 
 /** Inline AH price editor. Every edit is a new timestamped observation (REQ-4.1). */
-export function AhPriceCell({ itemId, pessimistic = false }: { itemId: number; pessimistic?: boolean }) {
+export function AhPriceCell({ itemId, min = false }: { itemId: number; min?: boolean }) {
   const { prices, mutate } = useStore();
   const latest = prices.find((p) => p.itemId === itemId);
-  const value = pessimistic ? (latest?.ahPessimistic ?? null) : (latest?.ahPrice ?? null);
+  const value = min ? (latest?.ahMin ?? null) : (latest?.ahPrice ?? null);
   return (
     <MoneyInput
       value={value}
-      placeholder={pessimistic ? 'min AH price' : 'AH price'}
-      onChange={(v) => mutate((repo) => setAhPrice(repo, latest, itemId, pessimistic ? { ahPessimistic: v } : { ahPrice: v }))}
+      placeholder={min ? 'min AH price' : 'AH price'}
+      onChange={(v) => mutate((repo) => setAhPrice(repo, latest, itemId, min ? { ahMin: v } : { ahPrice: v }))}
     />
   );
 }

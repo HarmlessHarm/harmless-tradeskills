@@ -363,7 +363,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
                       {x.disposition === 'ah' ? (
                         <div className="price-cell">
                           <AhPriceCell itemId={x.itemId} />
-                          <AhPriceCell itemId={x.itemId} pessimistic />
+                          <AhPriceCell itemId={x.itemId} min />
                           <AhPriceAge itemId={x.itemId} />
                         </div>
                       ) : x.disposition === 'vendor' ? (

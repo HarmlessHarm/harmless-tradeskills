@@ -130,7 +130,7 @@ describe('workflow: DE shuffle', () => {
     expect(a.batchInvestment).toBe(80 * 15 + 20 * 10 + 24 * 90 + 24 * 4 + 3 * 38);
     expect(a.batchDeposits).toBe(0);
     const d = engineData();
-    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahPessimistic: null, observedAt: 0 });
+    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahMin: null, observedAt: 0 });
     const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
     expect(r.batchDeposits).toBe(24 * deposit(d.config, 400, 1, '8h', 'faction'));
   });
@@ -145,7 +145,7 @@ describe('workflow: DE shuffle', () => {
     expect(sim.mean).toBeLessThanOrEqual(a.batchProfit + 1);
     expect(sim.mean).toBeGreaterThan(a.batchProfit - 0.15 * 20 * 1100);
     expect(sim.leftovers.some((l) => l.itemId === IDS.lme)).toBe(true);
-    expect(sim.worstCase).toBe(sim.p5); // no pessimistic prices set
+    expect(sim.worstCase).toBe(sim.p5); // no min AH prices set
     expect(sim.deterministic).toBe(false);
   });
 
@@ -153,16 +153,16 @@ describe('workflow: DE shuffle', () => {
     expect(analyzeWorkflow(data, deShuffle).simulation).toEqual(a.simulation);
   });
 
-  it('uses pessimistic AH prices for the worst case', () => {
+  it('uses min AH prices for the worst case', () => {
     const d = engineData();
-    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahPessimistic: 500, observedAt: 0 });
+    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahMin: 500, observedAt: 0 });
     const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
     expect(r.simulation!.worstCase).toBeLessThan(r.simulation!.p5);
   });
 
   it('updates immediately when a price changes', () => {
     const d = engineData();
-    d.prices.set(IDS.linen, { itemId: IDS.linen, ahPrice: 25, ahPessimistic: null, observedAt: 1 });
+    d.prices.set(IDS.linen, { itemId: IDS.linen, ahPrice: 25, ahMin: null, observedAt: 1 });
     expect(analyzeWorkflow(d, deShuffle).profitPerUnit).toBeCloseTo(a.profitPerUnit - 40);
   });
 

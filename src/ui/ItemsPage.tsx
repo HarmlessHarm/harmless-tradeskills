@@ -211,7 +211,7 @@ export function ItemsPage() {
                     <AhPriceCell itemId={r.id} />
                   </td>
                   <td>
-                    <AhPriceCell itemId={r.id} pessimistic />
+                    <AhPriceCell itemId={r.id} min />
                   </td>
                   <td className="small">
                     <AhPriceAge itemId={r.id} />

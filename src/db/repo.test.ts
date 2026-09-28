@@ -46,6 +46,16 @@ describe('repo', () => {
     expect(rules).toHaveLength(48);
   });
 
+  it('drops old pessimistic prices when upgrading to min AH prices', async () => {
+    const SQL = await initSqlJs();
+    const db = new SQL.Database();
+    MIGRATIONS.slice(0, 3).forEach((m) => db.exec(m));
+    db.exec('PRAGMA user_version = 3');
+    db.exec('INSERT INTO price_observations (item_id, ah_price, ah_pessimistic, observed_at) VALUES (1, 10, 8, 1)');
+    migrate(db);
+    expect(new Repo(db).latestPrices()).toEqual([{ itemId: 1, ahPrice: 10, ahMin: null, observedAt: 1 }]);
+  });
+
   it('round trips items with overrides', async () => {
     const repo = await freshRepo();
     const rec = {
@@ -65,13 +75,13 @@ describe('repo', () => {
 
   it('keeps price history and returns the latest', async () => {
     const repo = await freshRepo();
-    repo.addPrice({ itemId: 1, ahPrice: 10, ahPessimistic: null, observedAt: 1 });
-    repo.addPrice({ itemId: 1, ahPrice: 12, ahPessimistic: 8, observedAt: 2 });
-    repo.addPrice({ itemId: 2, ahPrice: 5, ahPessimistic: null, observedAt: 1 });
+    repo.addPrice({ itemId: 1, ahPrice: 10, ahMin: null, observedAt: 1 });
+    repo.addPrice({ itemId: 1, ahPrice: 12, ahMin: 8, observedAt: 2 });
+    repo.addPrice({ itemId: 2, ahPrice: 5, ahMin: null, observedAt: 1 });
     const latest = repo.latestPrices().sort((a, b) => a.itemId - b.itemId);
     expect(latest).toEqual([
-      { itemId: 1, ahPrice: 12, ahPessimistic: 8, observedAt: 2 },
-      { itemId: 2, ahPrice: 5, ahPessimistic: null, observedAt: 1 },
+      { itemId: 1, ahPrice: 12, ahMin: 8, observedAt: 2 },
+      { itemId: 2, ahPrice: 5, ahMin: null, observedAt: 1 },
     ]);
   });
 
@@ -102,7 +112,7 @@ describe('repo', () => {
     migrate(db);
     let n = 0;
     const repo = new Repo(db, () => n++);
-    repo.addPrice({ itemId: 1, ahPrice: 1, ahPessimistic: null, observedAt: 1 });
+    repo.addPrice({ itemId: 1, ahPrice: 1, ahMin: null, observedAt: 1 });
     expect(n).toBe(1);
   });
 

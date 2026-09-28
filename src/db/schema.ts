@@ -70,6 +70,9 @@ export const MIGRATIONS: string[] = [
   deSeedMigration(),
   // Target gold per hour for solving the buy limit of a 'disenchant-any' step (DEC-20).
   `ALTER TABLE workflows ADD COLUMN target_gph INTEGER;`,
+  // Pessimistic price renamed to min AH price. Old values are dropped, not carried over.
+  `ALTER TABLE price_observations DROP COLUMN ah_pessimistic;
+  ALTER TABLE price_observations ADD COLUMN ah_min INTEGER;`,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

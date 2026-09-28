@@ -63,7 +63,7 @@ export interface BuyLimit {
   qtyPerUnit: number;
   /** Expected profit is zero at this price. */
   breakEven: Copper;
-  /** The worst case batch (P5 with pessimistic prices) breaks even at this price. */
+  /** The worst case batch (P5 with min AH prices) breaks even at this price. */
   worstCase: Copper | null;
   /** The batch still earns the workflow's target gold per hour at this price. */
   forTarget: Copper | null;
@@ -78,7 +78,7 @@ export interface SimulationResult {
   p50: Copper;
   p95: Copper;
   mean: Copper;
-  /** P5 using pessimistic AH prices where set (REQ-4.2). The headline worst case. */
+  /** P5 using min AH prices where set (REQ-4.2). The headline worst case. */
   worstCase: Copper;
   /** Average leftover intermediates per batch (REQ-6.7). */
   leftovers: { itemId: number; avgQty: number }[];
@@ -297,11 +297,11 @@ function saleValue(
   wf: Workflow,
   itemId: number,
   disposition: Disposition,
-  pessimistic: boolean,
+  minPrices: boolean,
 ): Copper | null {
   if (disposition === 'keep') return 0;
   if (disposition === 'vendor') return price(data, itemId, 'vendor-sell');
-  const p = price(data, itemId, pessimistic ? 'ah-pessimistic' : 'ah');
+  const p = price(data, itemId, minPrices ? 'ah-min' : 'ah');
   return p === null ? null : netOnSale(data.config, p, wf.ahType);
 }
 
