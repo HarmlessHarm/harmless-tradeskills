@@ -17,6 +17,7 @@ export const DEFAULT_CONFIG: Config = {
   depositRefundedOnSale: true,
   listingMode: { armor: 'perItem', weapon: 'perItem', other: 'lot' },
   ahRulesVerifiedAt: null,
+  flipTargetMargin: 0.15,
   perActionOverheadSec: 1,
   perBatchOverheadSec: 120,
   defaultBatchSize: 20,

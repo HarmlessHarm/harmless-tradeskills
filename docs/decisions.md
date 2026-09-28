@@ -143,3 +143,10 @@
 - **Market value**: the quantity-weighted mean of the cheapest 15% of units, continued to 30% until the price steps up by more than 20%. Listings above that never count, which filters overpriced noise. It is 'solid' when the rows cover 15% of a known total, otherwise 'partial' (a few rows typed in by hand) and counts half in the typical price (weighted median over snapshots). Addon scans keep rows up to the cheapest half of units or twice the market value.
 - **Scope**: Only the flipper uses snapshots for now. Workflows keep `price_observations` in the personal database until they move over (planned with #14).
 - **Limitation**: Importing a prices file replaces the local one, like the other kinds. Merging someone else's snapshots into yours (using `uid`) is not built yet.
+
+## DEC-24: Flip watchlist instead of favorites chips and one form
+- **Context**: The flip page showed favorites as chips and one calculation at a time, which wastes space and hides comparisons (#19).
+- **Chosen**: One table with a row per watched item: favorites plus items any workflow buys or sells on the AH (found from the workflow's buy and sell choices, "any item" stand-ins excluded). Prices come from AH price snapshots (DEC-23) for the row's AH type. The calculator opens inline under a row. Per-item settings stay in the existing flip favorites list, which gains a `favorite` flag: `false` keeps the settings of a workflow item without starring it; a missing flag (older data) means a favorite.
+- **Buy below**: the largest buy price per item that still makes the target margin on cost after the cut, any deposit spent on sale and one lost deposit (one expiry), for the row's quantity and listing mode. Conservative on purpose: manual prices are thin.
+- **Sell at** defaults to the typical price (market based), not cost plus markup.
+- **Deferred**: holdings and average cost columns come with the ledger (#19 step 5); entering snapshots from the page comes in step 4.

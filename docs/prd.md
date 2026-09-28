@@ -66,10 +66,12 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-6.6**: Show time per unit as cast time x runs per unit plus a configurable per-action overhead, and time per batch including a configurable per-batch overhead; show gold/hour for the batch. [ref: DEC-12]
   - **REQ-6.7** (MAY): Show leftover items from a simulated batch. [ref: DEC-11]
   - **REQ-6.8** (SHOULD): A step can disenchant any item of a quality, armor vs weapon and item level band. Its item is not priced; instead the workflow shows the most to pay per item: break-even, safe (worst case breaks even) and for a target gold per hour. [ref: DEC-20]
-- **REQ-7** (MUST): AH flip calculator. Only favorites persist; flips themselves are not tracked. [ref: DEC-13]
+- **REQ-7** (MUST): AH flip watchlist with a calculator per item. Flips themselves are not tracked yet (ledger, #16). [ref: DEC-13, DEC-24]
   - **REQ-7.1**: Inputs: buy and expected sell price per item, quantity, listing duration, faction or neutral AH, and the item (its vendor sell price sets the deposit, its class sets whether the quantity is posted as one lot or per piece, REQ-5.3).
   - **REQ-7.2**: Outputs: profit per item and for the whole quantity if it sells on the first listing, cost per failed listing (the deposit for posting the quantity once), and the number of relists until the flip breaks even.
-  - **REQ-7.3**: Favorite items: star an item to keep it in a quick-pick list that remembers its last buy price, sell price, duration and AH type.
+  - **REQ-7.3**: Settings are remembered per item: buy price, sell price, quantity, duration and AH type. Starred items are favorites.
+  - **REQ-7.4**: One sortable watchlist table instead of a single form: favorites plus every item a workflow buys or sells on the AH. Columns: last seen low (and when), typical price with the number of snapshots n, buy below, sell at (the saved sell price, else the typical price), margin per item and % of cost when buying at the last low, and relists until break-even. Clicking a row opens the calculator inline.
+  - **REQ-7.5**: "Buy below" is the most to pay per item for a target margin on cost (a setting, default 15%) after the AH cut, any deposit spent on sale, and one lost deposit. A last seen low at or under it is highlighted.
 
 ## Non-functional requirements
 - **NFR-1** (MUST): Single-user personal tool.

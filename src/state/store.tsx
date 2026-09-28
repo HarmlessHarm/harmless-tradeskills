@@ -4,6 +4,7 @@ import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } fr
 import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
+import type { PriceSnapshot } from '../engine/snapshots';
 import type { EngineData } from '../engine/workflow';
 
 export interface Snapshot {
@@ -14,6 +15,8 @@ export interface Snapshot {
   workflows: Workflow[];
   config: Config;
   flipFavorites: FlipFavorite[];
+  /** AH price snapshots from the prices database (DEC-23), oldest first. */
+  priceSnapshots: PriceSnapshot[];
 }
 
 interface StoreValue extends Snapshot {
@@ -41,6 +44,7 @@ function readSnapshot(repo: Repo): Snapshot {
     workflows: repo.listWorkflows(),
     config: repo.getConfig(),
     flipFavorites: repo.listFlipFavorites(),
+    priceSnapshots: repo.listSnapshots(),
   };
 }
 
