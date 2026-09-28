@@ -10,6 +10,7 @@ import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 /** Poor and Common items cannot be disenchanted. */
 const MIN_DE_QUALITY = 2;
 const COLS = 6;
+const ALL = '__all';
 type RuleSortKey = 'quality' | 'min' | 'max' | 'type';
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -26,6 +27,17 @@ export function DisenchantPage() {
   // An input's blur may update the draft in the same click as Save, so save reads the ref.
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const [qualityFilter, setQualityFilter] = useState<string>(ALL);
+  const [typeFilter, setTypeFilter] = useState<string>(ALL);
+  const [levelFrom, setLevelFrom] = useState<number | null>(null);
+  const [levelTo, setLevelTo] = useState<number | null>(null);
+  const filtering = qualityFilter !== ALL || typeFilter !== ALL || levelFrom !== null || levelTo !== null;
+  const clearFilters = () => {
+    setQualityFilter(ALL);
+    setTypeFilter(ALL);
+    setLevelFrom(null);
+    setLevelTo(null);
+  };
 
   const stored = editing === null ? undefined : deRules.find((r) => r.id === editing);
   const dirty = !!stored && !!draft && !same(stored, draft);
@@ -59,12 +71,21 @@ export function DisenchantPage() {
     if (dirty && !confirm('Discard your unsaved changes?')) return;
     const rule: DisenchantRule = { id: 0, quality: 2, ilvlMin: 1, ilvlMax: 10, itemClass: 'armor', outputs: [], notes: '' };
     const id = mutate((repo) => repo.saveDeRule(rule));
+    clearFilters();
     setEditing(id);
     setDraft({ ...rule, id });
   };
 
+  // The level filter keeps rules whose band overlaps it; the same level in both finds the rule for that level.
+  const filtered = deRules.filter(
+    (r) =>
+      (qualityFilter === ALL || r.quality === Number(qualityFilter)) &&
+      (typeFilter === ALL || r.itemClass === typeFilter) &&
+      (levelFrom === null || r.ilvlMax >= levelFrom) &&
+      (levelTo === null || r.ilvlMin <= levelTo),
+  );
   const rows = sortRows(
-    deRules,
+    filtered,
     sort,
     (r, key): SortValue => {
       switch (key) {
@@ -84,11 +105,44 @@ export function DisenchantPage() {
 
   return (
     <div className="stack">
-      <Panel title={`Disenchant rules (${deRules.length})`} actions={<button onClick={addRule}>Add rule</button>}>
+      <Panel title={`Disenchant rules (${filtering ? `${rows.length} of ${deRules.length}` : deRules.length})`} actions={<button onClick={addRule}>Add rule</button>}>
         <p className="small muted">
           An item is disenchanted by the first rule that matches its quality, item level and armor or weapon type. Each disenchant gives exactly one
           result, picked by its chance. Check the values against DE Tracker totals with the expected yield in the editor.
         </p>
+        <div className="table-filters">
+          <select
+            className={qualityFilter === ALL ? '' : `q${qualityFilter}`}
+            value={qualityFilter}
+            onChange={(e) => setQualityFilter(e.target.value)}
+            aria-label="Filter by quality"
+          >
+            <option value={ALL}>All qualities</option>
+            {QUALITY_NAMES.map((q, i) =>
+              i >= MIN_DE_QUALITY ? (
+                <option key={q} value={i} className={`q${i}`}>
+                  {q}
+                </option>
+              ) : null,
+            )}
+          </select>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filter by type">
+            <option value={ALL}>Armor and weapons</option>
+            <option value="armor">Armor</option>
+            <option value="weapon">Weapon</option>
+          </select>
+          <label className="inline small">
+            iLvl
+            <LevelInput value={levelFrom} placeholder="min" label="Minimum item level" onChange={setLevelFrom} />
+            to
+            <LevelInput value={levelTo} placeholder="max" label="Maximum item level" onChange={setLevelTo} />
+          </label>
+          {filtering && (
+            <button className="link-btn" onClick={clearFilters}>
+              clear filters
+            </button>
+          )}
+        </div>
         <div className="table-wrap">
           <table className="table">
             <thead>
@@ -140,7 +194,7 @@ export function DisenchantPage() {
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={COLS} className="muted">
-                    No rules yet.
+                    {deRules.length ? 'No rules match these filters.' : 'No rules yet.'}
                   </td>
                 </tr>
               )}
@@ -149,6 +203,25 @@ export function DisenchantPage() {
         </div>
       </Panel>
     </div>
+  );
+}
+
+/** Filters as you type, unlike NumberInput which commits on blur. */
+function LevelInput({ value, placeholder, label, onChange }: { value: number | null; placeholder: string; label: string; onChange: (v: number | null) => void }) {
+  return (
+    <input
+      type="number"
+      className="num-input short"
+      min={0}
+      step={1}
+      placeholder={placeholder}
+      aria-label={label}
+      value={value ?? ''}
+      onChange={(e) => {
+        const v = e.target.value.trim() === '' ? null : Number(e.target.value);
+        onChange(v === null || Number.isFinite(v) ? v : null);
+      }}
+    />
   );
 }
 
