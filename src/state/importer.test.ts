@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { freshRepo } from '../test/db';
-import { bulkImport, importRecipe, importVendorPrices } from './importer';
+import { bulkImport, importItem, importRecipe, importVendorPrices } from './importer';
 
 /** Serves the saved real Wowhead responses; unknown IDs get a minimal item. */
 const fetcher = async (url: string) => {
@@ -31,6 +31,27 @@ describe('importer professions', () => {
 
     await importRecipe(repo, 2963, { force: true, fetcher });
     expect(repo.listRecipes().find((r) => r.id === 'spell:2963')!.imported.profession).toBe('Tailoring');
+  });
+});
+
+describe('bulkImport progress', () => {
+  it('counts only new refs and advances when a recipe brings in pasted items', async () => {
+    const repo = await freshRepo();
+    await importItem(repo, 10940, { fetcher });
+    // Bolt of Linen Cloth (2996) and Linen Cloth (2589) are new, but come with the recipe.
+    const refs = [
+      { type: 'spell' as const, id: 2963 },
+      { type: 'item' as const, id: 2996 },
+      { type: 'item' as const, id: 2589 },
+      { type: 'item' as const, id: 10940 },
+    ];
+    const progress: [number, number][] = [];
+    const res = await bulkImport(repo, refs, { force: false, fetcher }, (d, t) => progress.push([d, t]));
+    expect(progress).toEqual([
+      [0, 3],
+      [3, 3],
+    ]);
+    expect(res).toMatchObject({ imported: 3, skipped: 1, errors: [] });
   });
 });
 
