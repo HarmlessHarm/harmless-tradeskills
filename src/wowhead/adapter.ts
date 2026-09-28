@@ -61,6 +61,20 @@ export function extractWowheadRefs(html: string, text = ''): PastedRef[] {
   return [...found.values()];
 }
 
+/**
+ * Profession names linked in a pasted selection (Wowhead links a skill as /skill=197 with its name
+ * as the text). Used to suggest a profession for pasted recipes; empty when the page has none.
+ */
+export function extractProfessions(html: string): string[] {
+  const names = new Set<string>();
+  const anchors = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&]skill=\d+[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (let m = anchors.exec(html); m; m = anchors.exec(html)) {
+    const name = decodeEntities(m[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+    if (name && !/^\d+$/.test(name)) names.add(name);
+  }
+  return [...names];
+}
+
 export interface TooltipResponse {
   name: string;
   quality?: number;

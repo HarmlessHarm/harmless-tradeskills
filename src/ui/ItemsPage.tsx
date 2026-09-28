@@ -10,6 +10,9 @@ import { deleteConfirmText, itemUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
 import { RowActions, SelectAll, SelectionBar, useSelection } from './Selection';
 import { useEditSession } from './useEditSession';
+import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
+
+type ItemSortKey = 'name' | 'ilvl' | 'type' | 'vendorSell' | 'ah';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 
 export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
@@ -57,8 +60,10 @@ export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
 }
 
 export function ItemsPage() {
-  const { itemRecords, mutate, engine, workflows, deRules } = useStore();
-  const [filter, setFilter] = useState('');
+  const { itemRecords, mutate, engine, workflows, deRules, prices } = useStore();
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | ItemClass>('all');
+  const sort = useSort<ItemSortKey>('name');
   const sel = useSelection<number>();
   const edit = useEditSession(itemRecords, (r) => r.id, (r) => mutate((repo) => repo.saveItem(r)));
   const editing = edit.editing;
@@ -66,11 +71,32 @@ export function ItemsPage() {
   const [newName, setNewName] = useState('');
   const [bulk, setBulk] = useState(false);
 
-  const f = filter.trim().toLowerCase();
-  const rows = itemRecords
+  const q = search.trim().toLowerCase();
+  const ahPrice = new Map(prices.map((p) => [p.itemId, p.ahPrice]));
+  const filtered = itemRecords
     .map((r) => ({ r, it: effectiveItem(r) }))
-    .filter(({ it }) => !f || it.name.toLowerCase().includes(f) || String(it.id) === f)
-    .sort((a, b) => a.it.name.localeCompare(b.it.name));
+    .filter(({ it }) => !q || it.name.toLowerCase().includes(q) || String(it.id) === q.replace(/^#/, ''))
+    .filter(({ it }) => typeFilter === 'all' || it.itemClass === typeFilter);
+  const rows = sortRows(
+    filtered,
+    sort,
+    ({ it }, key): SortValue => {
+      switch (key) {
+        case 'name':
+          return it.name;
+        case 'ilvl':
+          return it.itemLevel;
+        case 'type':
+          return [it.itemClass === 'other' ? '' : it.itemClass, it.subclass ?? ''].join(' ').trim();
+        case 'vendorSell':
+          return it.vendorSell;
+        case 'ah':
+          return ahPrice.get(it.id);
+      }
+    },
+    ({ it }) => it.name,
+  );
+  const filtering = q !== '' || typeFilter !== 'all';
 
   const remove = (ids: number[]) => {
     if (ids.length === 0) return;
@@ -85,17 +111,49 @@ export function ItemsPage() {
 
   return (
     <div className="stack">
-      {bulk && <BulkImport onClose={() => setBulk(false)} />}
-      <Panel
-        title="Items"
-        actions={
-          <>
-            <input className="search" placeholder="Filter" value={filter} onChange={(e) => setFilter(e.target.value)} />
-            {!bulk && <button onClick={() => setBulk(true)}>Bulk import</button>}
-          </>
-        }
-      >
+      <Panel title="Import items" actions={!bulk && <button onClick={() => setBulk(true)}>Bulk import</button>}>
         <ImportBox defaultType="item" />
+        {bulk && <BulkImport onClose={() => setBulk(false)} />}
+        <div className="add-manual small">
+          <span className="muted">Add by hand:</span>
+          <NumberInput value={newId} onChange={setNewId} placeholder="Item ID" />
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name" />
+          <button
+            disabled={!newId || !newName.trim() || itemRecords.some((r) => r.id === newId)}
+            onClick={() => {
+              mutate((repo) => createManualItem(repo, newId!, newName.trim()));
+              setSearch('');
+              setTypeFilter('all');
+              edit.open(newId!);
+              setNewId(null);
+              setNewName('');
+            }}
+          >
+            Add
+          </button>
+        </div>
+      </Panel>
+      <Panel title={`Items (${filtering ? `${rows.length} of ${itemRecords.length}` : itemRecords.length})`}>
+        <div className="table-filters">
+          <input type="search" className="search" placeholder="Search name or #ID" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search items" />
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as 'all' | ItemClass)} aria-label="Filter by type">
+            <option value="all">All types</option>
+            <option value="armor">Armor</option>
+            <option value="weapon">Weapons</option>
+            <option value="other">Other</option>
+          </select>
+          {filtering && (
+            <button
+              className="link-btn"
+              onClick={() => {
+                setSearch('');
+                setTypeFilter('all');
+              }}
+            >
+              clear filters
+            </button>
+          )}
+        </div>
         <SelectionBar count={sel.selected.size} onDelete={() => remove([...sel.selected])} onClear={sel.clear} />
         <div className="table-wrap">
           <table className="table">
@@ -104,12 +162,12 @@ export function ItemsPage() {
                 <th className="check">
                   <SelectAll keys={rows.map(({ r }) => r.id)} sel={sel} />
                 </th>
-                <th>Item</th>
-                <th className="r">iLvl</th>
-                <th>Type</th>
-                <th>Vendor sell</th>
+                <SortHeader label="Item" k="name" sort={sort} />
+                <SortHeader label="iLvl" k="ilvl" sort={sort} className="r" />
+                <SortHeader label="Type" k="type" sort={sort} />
+                <SortHeader label="Vendor sell" k="vendorSell" sort={sort} />
                 <th>Vendor buy</th>
-                <th>AH price</th>
+                <SortHeader label="AH price" k="ah" sort={sort} />
                 <th>Pessimistic</th>
                 <th>Price age</th>
                 <th>Source</th>
@@ -180,29 +238,12 @@ export function ItemsPage() {
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={11} className="muted">
-                    {itemRecords.length ? 'No match.' : 'No items yet. Import one above, or they get imported when a recipe needs them.'}
+                    {itemRecords.length ? 'No items match these filters.' : 'No items yet. Import one above, or they get imported when a recipe needs them.'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
-        <div className="add-manual small">
-          <span className="muted">Add by hand:</span>
-          <NumberInput value={newId} onChange={setNewId} placeholder="Item ID" />
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Name" />
-          <button
-            disabled={!newId || !newName.trim() || itemRecords.some((r) => r.id === newId)}
-            onClick={() => {
-              mutate((repo) => createManualItem(repo, newId!, newName.trim()));
-              setFilter('');
-              edit.open(newId!);
-              setNewId(null);
-              setNewName('');
-            }}
-          >
-            Add
-          </button>
         </div>
       </Panel>
     </div>

@@ -1,8 +1,9 @@
 import { useState, type ClipboardEvent } from 'react';
 import { bulkImport, type BulkResult } from '../state/importer';
 import { useStore } from '../state/store';
-import { extractWowheadRefs, type PastedRef } from '../wowhead/adapter';
-import { errorText, Panel } from './common';
+import { professionOptions } from '../professions';
+import { extractProfessions, extractWowheadRefs, type PastedRef } from '../wowhead/adapter';
+import { errorText } from './common';
 
 const key = (r: PastedRef) => `${r.type}:${r.id}`;
 
@@ -19,13 +20,18 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BulkResult | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const [profession, setProfession] = useState('');
 
   const known = (r: PastedRef) =>
     r.type === 'spell' ? recipeRecords.some((x) => x.spellId === r.id) : itemRecords.some((x) => x.id === r.id);
 
   const onPaste = (e: ClipboardEvent) => {
     e.preventDefault();
-    const found = extractWowheadRefs(e.clipboardData.getData('text/html'), e.clipboardData.getData('text/plain'));
+    const html = e.clipboardData.getData('text/html');
+    const found = extractWowheadRefs(html, e.clipboardData.getData('text/plain'));
+    // A selection from one profession's recipe list names that profession; use it as the default.
+    const profs = extractProfessions(html);
+    setProfession(profs.length === 1 ? profs[0] : '');
     setRefs(found);
     setResult(null);
     setPicked(new Set(found.map(key)));
@@ -43,10 +49,10 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
     setResult(null);
     try {
       const chosen = refs.filter((r) => picked.has(key(r)));
-      const res = await mutateAsync((repo) => bulkImport(repo, chosen, { force }, (d, t) => setProgress(`${d} of ${t}`)));
+      const res = await mutateAsync((repo) => bulkImport(repo, chosen, { force, profession: profession.trim() || null }, (d, t) => setProgress(`${d} of ${t}`)));
       setResult(res);
     } catch (e) {
-      setResult({ imported: 0, skipped: 0, errors: [errorText(e)], warnings: [] });
+      setResult({ imported: 0, skipped: 0, tagged: 0, errors: [errorText(e)], warnings: [] });
     } finally {
       setRunning(false);
       setProgress(null);
@@ -56,6 +62,8 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
   const spells = refs.filter((r) => r.type === 'spell');
   const items = refs.filter((r) => r.type === 'item');
   const chosenCount = refs.filter((r) => picked.has(key(r)) && (force || !known(r))).length;
+  const pickedSpells = spells.filter((r) => picked.has(key(r))).length;
+  const tagOnly = chosenCount === 0 && pickedSpells > 0 && profession.trim() !== '';
 
   const list = (title: string, type: PastedRef['type'], rows: PastedRef[]) =>
     rows.length > 0 && (
@@ -90,7 +98,11 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
     );
 
   return (
-    <Panel title="Bulk import from Wowhead" actions={<button onClick={onClose}>Close</button>}>
+    <div className="bulk-section">
+      <div className="bulk-head">
+        <h3>Bulk import from Wowhead</h3>
+        <button onClick={onClose}>Close</button>
+      </div>
       <p className="small muted">
         On a Wowhead Forever page, select rows in a table (for example a profession's recipe list) and copy them. Paste below. Recipes also import
         their reagents and created item.
@@ -104,12 +116,29 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
             {list('Items', 'item', items)}
           </div>
           <div className="add-row">
+            {spells.length > 0 && (
+              <label className="inline small">
+                Profession for these recipes
+                <input
+                  className="short-input"
+                  list="bulk-professions"
+                  value={profession}
+                  placeholder="none"
+                  onChange={(e) => setProfession(e.target.value)}
+                />
+                <datalist id="bulk-professions">
+                  {professionOptions(recipeRecords.map((r) => r.imported.profession)).map((p) => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </label>
+            )}
             <label className="inline small">
               <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
               Re-import ones I already have (keeps my edits)
             </label>
-            <button disabled={running || chosenCount === 0} onClick={run}>
-              {running ? `Importing ${progress ?? ''}` : `Import ${chosenCount}`}
+            <button disabled={running || (chosenCount === 0 && !tagOnly)} onClick={run}>
+              {running ? `Importing ${progress ?? ''}` : tagOnly ? `Set profession on ${pickedSpells}` : `Import ${chosenCount}`}
             </button>
           </div>
         </>
@@ -119,6 +148,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
           <p>
             Imported {result.imported}
             {result.skipped > 0 && `, skipped ${result.skipped} already in the catalog`}
+            {result.tagged > 0 && `, set the profession on ${result.tagged} recipe${result.tagged === 1 ? '' : 's'}`}
             {result.errors.length > 0 && `, ${result.errors.length} failed`}.
           </p>
           {[...result.errors, ...result.warnings].map((m, i) => (
@@ -128,6 +158,6 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
           ))}
         </div>
       )}
-    </Panel>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
+import { extractProfessions, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
 
 /** Real Forever tooltip responses, saved byte for byte. See fixtures/. */
 const fixture = (name: string): TooltipResponse =>
@@ -42,6 +42,14 @@ describe('extractWowheadRefs', () => {
       { type: 'spell', id: 25124, name: null },
       { type: 'item', id: 10940, name: null },
     ]);
+  });
+});
+
+describe('extractProfessions', () => {
+  it('reads profession names from skill links and ignores bare skill levels', () => {
+    const html = '<a href="/forever/skill=197/tailoring">Tailoring</a> <a href="/forever/skill=197">75</a> <a href="/forever/skill=197">Tailoring</a>';
+    expect(extractProfessions(html)).toEqual(['Tailoring']);
+    expect(extractProfessions('<a href="/forever/item=1">x</a>')).toEqual([]);
   });
 });
 

@@ -791,3 +791,59 @@ button.primary:hover:not(:disabled) {
   background: none;
   padding: 3px 8px 3px 0;
 }
+
+/* Table filters and sortable headers */
+.table-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.search.wide {
+  width: min(320px, 100%);
+}
+.sort-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.sort-btn:hover,
+.sort-btn.on {
+  color: var(--text);
+}
+.sort-arrow {
+  font-size: 9px;
+  opacity: 0.45;
+}
+.sort-btn.on .sort-arrow {
+  opacity: 1;
+  color: var(--gold);
+}
+th.r .sort-btn {
+  flex-direction: row-reverse;
+}
+
+/* Bulk import inside the import card */
+.bulk-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.bulk-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.bulk-head h3 {
+  margin: 0;
+}
+.short-input {
+  width: 150px;
+}

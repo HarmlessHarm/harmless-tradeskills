@@ -49,7 +49,8 @@ export async function importRecipe(
   const recipe: RecipeRecord = {
     id,
     spellId,
-    imported: parsed.fields,
+    // Wowhead's tooltip has no profession, so keep one set earlier (by bulk import or by hand).
+    imported: { ...parsed.fields, profession: parsed.fields.profession ?? existing?.imported.profession ?? null },
     overrides: existing?.overrides ?? {},
     source: 'wowhead',
     fetchedAt: now,
@@ -82,6 +83,8 @@ export async function importMissingItems(repo: Repo, ids: number[], fetcher?: Fe
 export interface BulkResult {
   imported: number;
   skipped: number;
+  /** Recipes whose profession was set by this run. */
+  tagged: number;
   errors: string[];
   warnings: string[];
 }
@@ -90,14 +93,22 @@ export interface BulkResult {
  * Import a pasted list of items and spells one request at a time. Spells go first, because a
  * recipe import also pulls in its reagents and created item, which then need no separate request.
  */
+/** Set the profession on an imported recipe, as a base value so it is not shown as an edit. */
+export function setRecipeProfession(repo: Repo, spellId: number, profession: string): boolean {
+  const r = repo.listRecipes().find((x) => x.spellId === spellId);
+  if (!r || r.imported.profession === profession) return false;
+  repo.saveRecipe({ ...r, imported: { ...r.imported, profession }, updatedAt: Date.now() });
+  return true;
+}
+
 export async function bulkImport(
   repo: Repo,
   refs: WowheadRef[],
-  opts: { force: boolean },
+  opts: { force: boolean; profession?: string | null },
   onProgress: (done: number, total: number) => void,
 ): Promise<BulkResult> {
   const ordered = [...refs.filter((r) => r.type === 'spell'), ...refs.filter((r) => r.type === 'item')];
-  const result: BulkResult = { imported: 0, skipped: 0, errors: [], warnings: [] };
+  const result: BulkResult = { imported: 0, skipped: 0, tagged: 0, errors: [], warnings: [] };
   onProgress(0, ordered.length);
   for (let i = 0; i < ordered.length; i++) {
     const ref = ordered[i];
@@ -120,6 +131,8 @@ export async function bulkImport(
         result.errors.push(e instanceof Error ? e.message : String(e));
       }
     }
+    // Tag pasted recipes with the chosen profession, including ones that were already imported.
+    if (ref.type === 'spell' && opts.profession && setRecipeProfession(repo, ref.id, opts.profession)) result.tagged++;
     onProgress(i + 1, ordered.length);
   }
   return result;
