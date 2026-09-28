@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
 import { freshRepo } from '../test/db';
 import { deShuffle } from '../test/fixtures';
+import type { PriceSnapshot } from '../engine/snapshots';
 import { DE_SEED_NOTE } from './deSeed';
 import { dbKind, migrate, Repo, splitLegacy } from './repo';
 import { APPLICATION_ID, LEGACY_MIGRATIONS, USER_MIGRATIONS } from './schema';
@@ -32,7 +33,7 @@ describe('repo', () => {
     // User edited the armor starter rule; the weapon one is untouched.
     db.exec(`UPDATE de_rules SET notes = 'mine' WHERE item_class = 'armor'`);
     const { data, user } = splitLegacy(db, (b) => new SQL.Database(b));
-    const rules = new Repo(data, user).listDeRules();
+    const rules = new Repo({ data, user, prices: (await freshRepo()).prices }).listDeRules();
     const low = rules.filter((r) => r.quality === 2 && r.ilvlMin <= 15);
     expect(low.map((r) => [r.itemClass, r.ilvlMin, r.notes])).toEqual([
       ['armor', 5, 'mine'],
@@ -54,7 +55,7 @@ describe('repo', () => {
     user.exec(insert);
     migrate(user, 'user');
     const fresh = await freshRepo();
-    expect(new Repo(fresh.data, user).latestPrices()).toEqual(expected);
+    expect(new Repo({ data: fresh.data, user, prices: fresh.prices }).latestPrices()).toEqual(expected);
 
     // A legacy combined file, e.g. an old export.
     const legacy = new SQL.Database();
@@ -62,7 +63,7 @@ describe('repo', () => {
     legacy.exec(`PRAGMA user_version = ${LEGACY_MIGRATIONS.length}`);
     legacy.exec(insert);
     const split = splitLegacy(legacy, (b) => new SQL.Database(b));
-    expect(new Repo(split.data, split.user).latestPrices()).toEqual(expected);
+    expect(new Repo({ ...split, prices: fresh.prices }).latestPrices()).toEqual(expected);
   });
 
   it('round trips items with overrides', async () => {
@@ -132,14 +133,69 @@ describe('repo', () => {
   });
 });
 
+describe('price snapshots', () => {
+  const snap = (uid: string, itemId: number, observedAt: number): PriceSnapshot => ({
+    uid,
+    itemId,
+    observedAt,
+    ahType: 'faction',
+    source: 'manual',
+    totalQty: 3000,
+    levels: [
+      { price: 56, qty: 100 },
+      { price: 58, qty: 450 },
+    ],
+    truncated: true,
+  });
+
+  it('round trips snapshots and stores the derived stats', async () => {
+    const repo = await freshRepo();
+    expect(repo.addSnapshot(snap('a', 2589, 10))).toBe(true);
+    expect(repo.listSnapshots()).toEqual([{ ...snap('a', 2589, 10), id: 1 }]);
+    const row = repo.prices.exec('SELECT min_price, min_qty, market_value, confidence FROM price_snapshots')[0].values[0];
+    // 15% of 3000 = 450 units is reached in the 58c row, which is taken whole (under 30%).
+    expect(row).toEqual([56, 100, Math.round((100 * 56 + 450 * 58) / 550), 'solid']);
+  });
+
+  it('stores a snapshot once, however often it is imported', async () => {
+    const changed: string[] = [];
+    const repo = await freshRepo((kind) => changed.push(kind));
+    expect(repo.addSnapshot(snap('a', 2589, 10))).toBe(true);
+    expect(repo.addSnapshot(snap('a', 2589, 10))).toBe(false);
+    expect(repo.listSnapshots()).toHaveLength(1);
+    expect(changed).toEqual(['prices']);
+  });
+
+  it('filters by item and time, oldest first', async () => {
+    const repo = await freshRepo();
+    repo.addSnapshot(snap('c', 2589, 30));
+    repo.addSnapshot(snap('a', 2589, 10));
+    repo.addSnapshot(snap('b', 4306, 20));
+    expect(repo.listSnapshots({ itemId: 2589 }).map((s) => s.uid)).toEqual(['a', 'c']);
+    expect(repo.listSnapshots({ since: 20 }).map((s) => s.uid)).toEqual(['b', 'c']);
+    repo.deleteSnapshot(repo.listSnapshots({ itemId: 4306 })[0].id!);
+    expect(repo.listSnapshots().map((s) => s.uid)).toEqual(['a', 'c']);
+  });
+
+  it('keeps prices out of the game data and personal data files', async () => {
+    const repo = await freshRepo();
+    repo.addSnapshot(snap('a', 2589, 10));
+    expect(repo.user.exec(`SELECT name FROM sqlite_master WHERE name = 'price_snapshots'`)).toEqual([]);
+    expect(repo.data.exec(`SELECT name FROM sqlite_master WHERE name = 'price_snapshots'`)).toEqual([]);
+  });
+});
+
 describe('split databases', () => {
-  it('keeps game data and personal data in separate files', async () => {
+  it('keeps game data, personal data and prices in separate files', async () => {
     const repo = await freshRepo();
     const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();
     expect(tables(repo.data)).toEqual(['de_rules', 'items', 'recipes']);
     expect(tables(repo.user)).toEqual(['price_observations', 'settings', 'workflows']);
+    expect(tables(repo.prices)).toEqual(['price_snapshots']);
     expect(dbKind(repo.data)).toBe('data');
     expect(dbKind(repo.user)).toBe('user');
+    expect(dbKind(repo.prices)).toBe('prices');
+    expect(() => migrate(repo.prices, 'user')).toThrow(/Expected a user database, got prices/);
     expect(() => migrate(repo.data, 'user')).toThrow(/Expected a user database/);
   });
 
@@ -157,7 +213,9 @@ describe('split databases', () => {
     expect(dbKind(legacy)).toBe('legacy');
 
     const { data, user } = splitLegacy(new SQL.Database(legacy.export()), (b) => new SQL.Database(b));
-    const repo = new Repo(data, user);
+    const prices = new SQL.Database();
+    migrate(prices, 'prices');
+    const repo = new Repo({ data, user, prices });
     expect(repo.listItems().map((i) => i.id)).toEqual([4306]);
     expect(repo.listDeRules()).toHaveLength(48);
     expect(repo.listWorkflows().map((w) => [w.name, w.targetGoldPerHour])).toEqual([['Shuffle', 5000]]);

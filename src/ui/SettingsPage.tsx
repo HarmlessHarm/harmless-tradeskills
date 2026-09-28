@@ -7,12 +7,16 @@ import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { DisenchantPage } from './DisenchantPage';
 
-const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
-const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data' };
+const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal', prices: 'prices' };
+const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
 const KIND_CONTENTS: Record<DbKind, string> = {
   data: 'items, recipes, disenchant rules',
-  user: 'workflows, flip favorites, prices, settings',
+  user: 'workflows, workflow prices, flip favorites, settings',
+  prices: 'AH price snapshots',
 };
+
+/** "a", "a and b", "a, b and c". */
+const listText = (parts: string[]) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
 
 const pct = (x: number) => Math.round(x * 10000) / 100;
 
@@ -209,11 +213,11 @@ function DataSettings() {
   const [clearMsg, setClearMsg] = useState<string | null>(null);
 
   const clear = async (kinds: DbKind[]) => {
-    const what = kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`).join(' and ');
+    const what = listText(kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`));
     if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
     try {
       await clearDb(kinds);
-      setClearMsg(`Cleared ${kinds.map((k) => KIND_LABEL[k]).join(' and ')}.`);
+      setClearMsg(`Cleared ${listText(kinds.map((k) => KIND_LABEL[k]))}.`);
     } catch (err) {
       setClearMsg(`Clearing failed: ${errorText(err)}`);
     }
@@ -257,12 +261,14 @@ function DataSettings() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as two SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
-          can be shared with other players. <b>Personal data</b> (workflows, flip favorites, prices, settings) is yours.
-          Export both for backups or to move to another machine. Importing a file replaces only the data it holds.
+          Everything is stored in this browser as three SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
+          can be shared with other players. <b>AH prices</b> (price snapshots for flipping) can be shared with players on your
+          realm. <b>Personal data</b> (workflows, workflow prices, flip favorites, settings) is yours. Export all three for backups
+          or to move to another machine. Importing a file replaces only the data it holds.
         </p>
         <div className="add-row">
           <button onClick={() => download('data')}>Export game data</button>
+          <button onClick={() => download('prices')}>Export AH prices</button>
           <button onClick={() => download('user')}>Export personal data</button>
           <button onClick={() => fileRef.current?.click()}>Import .sqlite</button>
           <input
@@ -277,7 +283,7 @@ function DataSettings() {
               if (!confirm('Replace the data in this browser with the data in the imported file?')) return;
               try {
                 const kinds = await importDb(new Uint8Array(await file.arrayBuffer()));
-                setDataMsg(`Imported ${kinds.map((k) => KIND_LABEL[k]).join(' and ')} from ${file.name}.`);
+                setDataMsg(`Imported ${listText(kinds.map((k) => KIND_LABEL[k]))} from ${file.name}.`);
               } catch (err) {
                 setDataMsg(`Import failed: ${errorText(err)}`);
               }
@@ -293,8 +299,9 @@ function DataSettings() {
         </p>
         <div className="add-row">
           <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+          <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
           <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
-          <button className="danger" onClick={() => clear(['data', 'user'])}>Clear all data</button>
+          <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>
           {clearMsg && <span className="small muted">{clearMsg}</span>}
         </div>
       </Panel>

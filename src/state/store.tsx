@@ -52,14 +52,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const savers = useMemo(
-    () => ({ data: persister('data', () => dbsRef.current!.data), user: persister('user', () => dbsRef.current!.user) }),
+    (): Record<DbKind, ReturnType<typeof persister>> => ({
+      data: persister('data', () => dbsRef.current!.data),
+      user: persister('user', () => dbsRef.current!.user),
+      prices: persister('prices', () => dbsRef.current!.prices),
+    }),
     [],
   );
 
   const attach = useCallback(
     (dbs: Dbs) => {
       dbsRef.current = dbs;
-      const r = new Repo(dbs.data, dbs.user, (kind) => savers[kind].schedule());
+      const r = new Repo(dbs, (kind) => savers[kind].schedule());
       setRepo(r);
       setSnap(readSnapshot(r));
     },
@@ -73,8 +77,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     const flush = () => {
       if (!dbsRef.current) return;
-      void savers.data.flush();
-      void savers.user.flush();
+      for (const saver of Object.values(savers)) void saver.flush();
     };
     window.addEventListener('pagehide', flush);
     return () => {

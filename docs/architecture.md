@@ -1,7 +1,7 @@
 # Architecture: WoW Forever Profession Toolbox (MVP)
 
 ## Stack
-React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browser, persisted to IndexedDB [ref: DEC-18]. Shareable game data (items, recipes, DE rules) and personal data (workflows, flip favorites, prices, settings) are separate database files [ref: DEC-21]. Wowhead is proxied through a Vercel rewrite at `/wh/{item|spell}/{id}`.
+React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browser, persisted to IndexedDB [ref: DEC-18]. Shareable game data (items, recipes, DE rules), shareable AH price snapshots, and personal data (workflows, workflow prices, flip favorites, settings) are separate database files [ref: DEC-21, DEC-23]. Wowhead is proxied through a Vercel rewrite at `/wh/{item|spell}/{id}`.
 
 ## Data model (conceptual)
 - **Item**: WoW item ID, name, quality, item level, class (armor/weapon/reagent...), vendor sell price (imported), vendor buy price (manual), source and timestamps, manual overrides. [ref: DEC-3, DEC-6, REQ-1]
