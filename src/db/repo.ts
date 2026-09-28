@@ -9,7 +9,10 @@ import type {
   RecipeRecord,
   Workflow,
 } from '../engine/types';
-import { MIGRATIONS } from './schema';
+import { APPLICATION_ID, DATA_MIGRATIONS, type DbKind, LEGACY_MIGRATIONS, SPLIT_VERSION, TABLES, USER_MIGRATIONS } from './schema';
+
+export type { DbKind };
+export type Dbs = Record<DbKind, Database>;
 
 type Row = Record<string, SqlValue>;
 
@@ -22,13 +25,17 @@ const json = <T>(v: SqlValue, fallback: T): T => {
   }
 };
 const num = (v: SqlValue): number | null => (v === null || v === undefined ? null : Number(v));
+const pragma = (db: Database, name: string) => Number(db.exec(`PRAGMA ${name}`)[0]?.values[0][0] ?? 0);
+const tables = (db: Database) => new Set((db.exec(`SELECT name FROM sqlite_master WHERE type = 'table'`)[0]?.values ?? []).map((r) => String(r[0])));
 
-export function migrate(db: Database): void {
-  const current = Number(db.exec('PRAGMA user_version')[0]?.values[0][0] ?? 0);
-  for (let v = current; v < MIGRATIONS.length; v++) {
+const MIGRATIONS: Record<DbKind, string[]> = { data: DATA_MIGRATIONS, user: USER_MIGRATIONS };
+const KINDS: DbKind[] = ['data', 'user'];
+
+function runMigrations(db: Database, migrations: string[]): void {
+  for (let v = pragma(db, 'user_version'); v < migrations.length; v++) {
     db.exec('BEGIN');
     try {
-      db.exec(MIGRATIONS[v]);
+      db.exec(migrations[v]);
       db.exec(`PRAGMA user_version = ${v + 1}`);
       db.exec('COMMIT');
     } catch (e) {
@@ -38,15 +45,59 @@ export function migrate(db: Database): void {
   }
 }
 
-/** Thin typed access to the database. Call `onChange` after writes so the caller can persist. */
+/** What a database file holds: one of the two kinds, a legacy combined file, or nothing yet. */
+export function dbKind(db: Database): DbKind | 'legacy' | 'empty' {
+  const appId = pragma(db, 'application_id');
+  const kind = KINDS.find((k) => APPLICATION_ID[k] === appId);
+  if (kind) return kind;
+  if (appId === 0) {
+    const t = tables(db);
+    if (t.size === 0) return 'empty';
+    if (t.has('items') && t.has('workflows')) return 'legacy';
+  }
+  throw new Error('Not a Harmless Tradeskills database');
+}
+
+/** Creates or updates a database of the given kind. Throws if the file is of another kind. */
+export function migrate(db: Database, kind: DbKind): void {
+  const found = dbKind(db);
+  if (found === 'empty') db.exec(`PRAGMA application_id = ${APPLICATION_ID[kind]}`);
+  else if (found !== kind) throw new Error(`Expected a ${kind} database, got ${found}`);
+  runMigrations(db, MIGRATIONS[kind]);
+}
+
+/**
+ * Splits a legacy combined database into a data and a user database, each migrated to the latest
+ * version. `open` creates a database from bytes (sql.js `new SQL.Database(bytes)`).
+ */
+export function splitLegacy(legacy: Database, open: (bytes: Uint8Array) => Database): Dbs {
+  runMigrations(legacy, LEGACY_MIGRATIONS);
+  const bytes = legacy.export();
+  const split = (kind: DbKind): Database => {
+    const db = open(bytes);
+    for (const other of KINDS.filter((k) => k !== kind)) for (const t of TABLES[other]) db.exec(`DROP TABLE ${t}`);
+    db.exec(`PRAGMA user_version = ${SPLIT_VERSION[kind]}`);
+    db.exec(`PRAGMA application_id = ${APPLICATION_ID[kind]}`);
+    db.exec('VACUUM');
+    migrate(db, kind);
+    return db;
+  };
+  return { data: split('data'), user: split('user') };
+}
+
+/**
+ * Thin typed access to the two databases. Call `onChange` after writes so the caller can persist
+ * the database that changed.
+ */
 export class Repo {
   constructor(
-    readonly db: Database,
-    private onChange: () => void = () => {},
+    readonly data: Database,
+    readonly user: Database,
+    private onChange: (kind: DbKind) => void = () => {},
   ) {}
 
-  private all(sql: string, params: SqlValue[] = []): Row[] {
-    const stmt = this.db.prepare(sql);
+  private all(kind: DbKind, sql: string, params: SqlValue[] = []): Row[] {
+    const stmt = this[kind].prepare(sql);
     try {
       stmt.bind(params);
       const rows: Row[] = [];
@@ -57,15 +108,19 @@ export class Repo {
     }
   }
 
-  private run(sql: string, params: SqlValue[] = []): void {
-    this.db.run(sql, params);
-    this.onChange();
+  private run(kind: DbKind, sql: string, params: SqlValue[] = []): void {
+    this[kind].run(sql, params);
+    this.onChange(kind);
+  }
+
+  private lastId(kind: DbKind): number {
+    return Number(this[kind].exec('SELECT last_insert_rowid()')[0].values[0][0]);
   }
 
   // Items -------------------------------------------------------------------
 
   listItems(): ItemRecord[] {
-    return this.all('SELECT * FROM items ORDER BY id').map((r) => ({
+    return this.all('data', 'SELECT * FROM items ORDER BY id').map((r) => ({
       id: Number(r.id),
       imported: json(r.imported, {} as ItemRecord['imported']),
       overrides: json(r.overrides, {}),
@@ -79,6 +134,7 @@ export class Repo {
 
   saveItem(item: ItemRecord): void {
     this.run(
+      'data',
       `INSERT INTO items (id, imported, overrides, vendor_buy, source, fetched_at, updated_at, raw_tooltip)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET imported=excluded.imported, overrides=excluded.overrides,
@@ -98,13 +154,13 @@ export class Repo {
   }
 
   deleteItem(id: number): void {
-    this.run('DELETE FROM items WHERE id = ?', [id]);
+    this.run('data', 'DELETE FROM items WHERE id = ?', [id]);
   }
 
   // Recipes -----------------------------------------------------------------
 
   listRecipes(): RecipeRecord[] {
-    return this.all('SELECT * FROM recipes ORDER BY id').map((r) => {
+    return this.all('data', 'SELECT * FROM recipes ORDER BY id').map((r) => {
       const imported = json(r.imported, {} as RecipeRecord['imported']);
       return {
         id: String(r.id),
@@ -121,6 +177,7 @@ export class Repo {
 
   saveRecipe(recipe: RecipeRecord): void {
     this.run(
+      'data',
       `INSERT INTO recipes (id, spell_id, imported, overrides, source, fetched_at, updated_at, raw_tooltip)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET spell_id=excluded.spell_id, imported=excluded.imported,
@@ -140,11 +197,11 @@ export class Repo {
   }
 
   deleteRecipe(id: string): void {
-    this.run('DELETE FROM recipes WHERE id = ?', [id]);
+    this.run('data', 'DELETE FROM recipes WHERE id = ?', [id]);
   }
 
   nextLocalRecipeId(): string {
-    const rows = this.all(`SELECT id FROM recipes WHERE id LIKE 'local:%'`);
+    const rows = this.all('data', `SELECT id FROM recipes WHERE id LIKE 'local:%'`);
     const max = rows.reduce((m, r) => Math.max(m, Number(String(r.id).slice(6)) || 0), 0);
     return `local:${max + 1}`;
   }
@@ -152,7 +209,7 @@ export class Repo {
   // Disenchant rules --------------------------------------------------------
 
   listDeRules(): DisenchantRule[] {
-    return this.all('SELECT * FROM de_rules ORDER BY quality, item_class, ilvl_min').map((r) => ({
+    return this.all('data', 'SELECT * FROM de_rules ORDER BY quality, item_class, ilvl_min').map((r) => ({
       id: Number(r.id),
       quality: Number(r.quality) as DisenchantRule['quality'],
       ilvlMin: Number(r.ilvl_min),
@@ -175,17 +232,18 @@ export class Repo {
     ];
     if (rule.id) {
       this.run(
+        'data',
         'UPDATE de_rules SET quality=?, ilvl_min=?, ilvl_max=?, item_class=?, outputs=?, notes=? WHERE id=?',
         [...params, rule.id],
       );
       return rule.id;
     }
-    this.run('INSERT INTO de_rules (quality, ilvl_min, ilvl_max, item_class, outputs, notes) VALUES (?,?,?,?,?,?)', params);
-    return Number(this.db.exec('SELECT last_insert_rowid()')[0].values[0][0]);
+    this.run('data', 'INSERT INTO de_rules (quality, ilvl_min, ilvl_max, item_class, outputs, notes) VALUES (?,?,?,?,?,?)', params);
+    return this.lastId('data');
   }
 
   deleteDeRule(id: number): void {
-    this.run('DELETE FROM de_rules WHERE id = ?', [id]);
+    this.run('data', 'DELETE FROM de_rules WHERE id = ?', [id]);
   }
 
   // Prices ------------------------------------------------------------------
@@ -193,6 +251,7 @@ export class Repo {
   /** Latest observation per item. */
   latestPrices(): PriceObservation[] {
     return this.all(
+      'user',
       `SELECT p.* FROM price_observations p
        JOIN (SELECT item_id, MAX(id) AS id FROM price_observations GROUP BY item_id) latest ON latest.id = p.id`,
     ).map((r) => ({
@@ -204,7 +263,7 @@ export class Repo {
   }
 
   addPrice(obs: PriceObservation): void {
-    this.run('INSERT INTO price_observations (item_id, ah_price, ah_pessimistic, observed_at) VALUES (?,?,?,?)', [
+    this.run('user', 'INSERT INTO price_observations (item_id, ah_price, ah_pessimistic, observed_at) VALUES (?,?,?,?)', [
       obs.itemId,
       obs.ahPrice,
       obs.ahPessimistic,
@@ -215,7 +274,7 @@ export class Repo {
   // Workflows ---------------------------------------------------------------
 
   listWorkflows(): Workflow[] {
-    return this.all('SELECT * FROM workflows ORDER BY name').map((r) => ({
+    return this.all('user', 'SELECT * FROM workflows ORDER BY name').map((r) => ({
       id: Number(r.id),
       name: String(r.name),
       notes: String(r.notes ?? ''),
@@ -248,6 +307,7 @@ export class Repo {
     ];
     if (wf.id) {
       this.run(
+        'user',
         `UPDATE workflows SET name=?, notes=?, steps=?, unit_item_id=?, buy_map=?, sell_map=?, batch_size=?,
          ah_type=?, ah_duration=?, target_gph=?, updated_at=? WHERE id=?`,
         [...params, wf.id],
@@ -255,26 +315,27 @@ export class Repo {
       return wf.id;
     }
     this.run(
+      'user',
       `INSERT INTO workflows (name, notes, steps, unit_item_id, buy_map, sell_map, batch_size, ah_type, ah_duration, target_gph, updated_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       params,
     );
-    return Number(this.db.exec('SELECT last_insert_rowid()')[0].values[0][0]);
+    return this.lastId('user');
   }
 
   deleteWorkflow(id: number): void {
-    this.run('DELETE FROM workflows WHERE id = ?', [id]);
+    this.run('user', 'DELETE FROM workflows WHERE id = ?', [id]);
   }
 
   // Config ------------------------------------------------------------------
 
   getConfig(): Config {
-    const row = this.all(`SELECT value FROM settings WHERE key = 'config'`)[0];
+    const row = this.all('user', `SELECT value FROM settings WHERE key = 'config'`)[0];
     return withDefaults(row ? json<Partial<Config>>(row.value, {}) : null);
   }
 
   saveConfig(config: Config): void {
-    this.run(`INSERT INTO settings (key, value) VALUES ('config', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
+    this.run('user', `INSERT INTO settings (key, value) VALUES ('config', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
       JSON.stringify(config),
     ]);
   }
@@ -282,12 +343,12 @@ export class Repo {
   // Flip favorites ----------------------------------------------------------
 
   listFlipFavorites(): FlipFavorite[] {
-    const row = this.all(`SELECT value FROM settings WHERE key = 'flipFavorites'`)[0];
+    const row = this.all('user', `SELECT value FROM settings WHERE key = 'flipFavorites'`)[0];
     return row ? json<FlipFavorite[]>(row.value, []) : [];
   }
 
   saveFlipFavorites(favorites: FlipFavorite[]): void {
-    this.run(`INSERT INTO settings (key, value) VALUES ('flipFavorites', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
+    this.run('user', `INSERT INTO settings (key, value) VALUES ('flipFavorites', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
       JSON.stringify(favorites),
     ]);
   }

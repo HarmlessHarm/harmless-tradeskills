@@ -1,7 +1,7 @@
 import type { Database } from 'sql.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { openBrowserDb, openDbFromBytes, persist, persister } from '../db/browser';
-import { Repo } from '../db/repo';
+import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } from '../db/browser';
+import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
 import type { EngineData } from '../engine/workflow';
@@ -23,8 +23,11 @@ interface StoreValue extends Snapshot {
   mutate: <T>(fn: (repo: Repo) => T) => T;
   /** Like mutate, for async work such as Wowhead imports. */
   mutateAsync: <T>(fn: (repo: Repo) => Promise<T>) => Promise<T>;
-  exportDb: () => Uint8Array;
-  importDb: (bytes: Uint8Array) => Promise<void>;
+  exportDb: (kind: DbKind) => Uint8Array;
+  /** Replaces the database(s) the file holds and returns which were replaced. */
+  importDb: (bytes: Uint8Array) => Promise<DbKind[]>;
+  /** Replaces the given databases with empty ones. */
+  clearDb: (kinds: DbKind[]) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -41,39 +44,58 @@ function readSnapshot(repo: Repo): Snapshot {
   };
 }
 
+const closeAll = (dbs: Dbs) => Object.values(dbs).forEach((db: Database) => db.close());
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const dbRef = useRef<Database | null>(null);
+  const dbsRef = useRef<Dbs | null>(null);
   const [repo, setRepo] = useState<Repo | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const saver = useMemo(() => persister(() => dbRef.current!), []);
+  const savers = useMemo(
+    () => ({ data: persister('data', () => dbsRef.current!.data), user: persister('user', () => dbsRef.current!.user) }),
+    [],
+  );
 
   const attach = useCallback(
-    (db: Database) => {
-      dbRef.current = db;
-      const r = new Repo(db, saver.schedule);
+    (dbs: Dbs) => {
+      dbsRef.current = dbs;
+      const r = new Repo(dbs.data, dbs.user, (kind) => savers[kind].schedule());
       setRepo(r);
       setSnap(readSnapshot(r));
     },
-    [saver],
+    [savers],
   );
 
   useEffect(() => {
     let cancelled = false;
-    openBrowserDb()
-      .then((db) => (cancelled ? db.close() : attach(db)))
+    openBrowserDbs()
+      .then((dbs) => (cancelled ? closeAll(dbs) : attach(dbs)))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
-    const flush = () => dbRef.current && void saver.flush();
+    const flush = () => {
+      if (!dbsRef.current) return;
+      void savers.data.flush();
+      void savers.user.flush();
+    };
     window.addEventListener('pagehide', flush);
     return () => {
       cancelled = true;
       window.removeEventListener('pagehide', flush);
     };
-  }, [attach, saver]);
+  }, [attach, savers]);
 
   const value = useMemo<StoreValue | null>(() => {
     if (!repo || !snap) return null;
     const refresh = () => setSnap(readSnapshot(repo));
+    /** Swaps in the given databases and returns which were replaced. */
+    const replace = async (dbs: Partial<Dbs>): Promise<DbKind[]> => {
+      const kinds = (Object.keys(dbs) as DbKind[]).sort();
+      const current = dbsRef.current!;
+      // A pending debounced save reads dbsRef, so after the swap it saves the new database.
+      for (const kind of kinds) await persist(kind, dbs[kind]!);
+      for (const kind of kinds) current[kind].close();
+      attach({ ...current, ...dbs });
+      return kinds;
+    };
     const engine: EngineData = {
       items: new Map(snap.itemRecords.map((r) => [r.id, effectiveItem(r)])),
       recipes: new Map(snap.recipeRecords.map((r) => [r.id, effectiveRecipe(r)])),
@@ -99,13 +121,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           refresh();
         }
       },
-      exportDb: () => repo.db.export(),
-      importDb: async (bytes) => {
-        const db = await openDbFromBytes(bytes);
-        await persist(db);
-        dbRef.current?.close();
-        attach(db);
-      },
+      exportDb: (kind) => repo[kind].export(),
+      importDb: async (bytes) => replace(await openDbsFromBytes(bytes)),
+      clearDb: async (kinds) => void (await replace(await openFreshDbs(kinds))),
     };
   }, [repo, snap, attach]);
 

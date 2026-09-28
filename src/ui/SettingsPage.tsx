@@ -1,14 +1,22 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../config';
+import type { DbKind } from '../db/repo';
 import type { AhDuration, Config } from '../engine/types';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel } from './common';
 
+const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
+const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data' };
+const KIND_CONTENTS: Record<DbKind, string> = {
+  data: 'items, recipes, disenchant rules',
+  user: 'workflows, flip favorites, prices, settings',
+};
+
 const pct = (x: number) => Math.round(x * 10000) / 100;
 
 export function SettingsPage() {
-  const { config, mutate, mutateAsync, exportDb, importDb } = useStore();
+  const { config, mutate, mutateAsync, exportDb, importDb, clearDb } = useStore();
   const save = (patch: Partial<Config>) => mutate((repo) => repo.saveConfig({ ...config, ...patch }));
   const setDuration = (i: number, patch: Partial<AhDuration>) => save({ durations: config.durations.map((d, k) => (k === i ? { ...d, ...patch } : d)) });
 
@@ -16,13 +24,25 @@ export function SettingsPage() {
   const [dataMsg, setDataMsg] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(30);
   const [progress, setProgress] = useState<string | null>(null);
+  const [clearMsg, setClearMsg] = useState<string | null>(null);
 
-  const download = () => {
-    const bytes = exportDb();
+  const clear = async (kinds: DbKind[]) => {
+    const what = kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`).join(' and ');
+    if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
+    try {
+      await clearDb(kinds);
+      setClearMsg(`Cleared ${kinds.map((k) => KIND_LABEL[k]).join(' and ')}.`);
+    } catch (err) {
+      setClearMsg(`Clearing failed: ${errorText(err)}`);
+    }
+  };
+
+  const download = (kind: DbKind) => {
+    const bytes = exportDb(kind);
     const blob = new Blob([bytes.slice().buffer], { type: 'application/vnd.sqlite3' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `harmless-tradeskills-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    a.download = `harmless-tradeskills-${FILE_NAME[kind]}-${new Date().toISOString().slice(0, 10)}.sqlite`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -125,10 +145,13 @@ export function SettingsPage() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as a SQLite database. Export it for backups or to move to another machine.
+          Everything is stored in this browser as two SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
+          can be shared with other players. <b>Personal data</b> (workflows, flip favorites, prices, settings) is yours.
+          Export both for backups or to move to another machine. Importing a file replaces only the data it holds.
         </p>
         <div className="add-row">
-          <button onClick={download}>Export .sqlite</button>
+          <button onClick={() => download('data')}>Export game data</button>
+          <button onClick={() => download('user')}>Export personal data</button>
           <button onClick={() => fileRef.current?.click()}>Import .sqlite</button>
           <input
             ref={fileRef}
@@ -139,16 +162,28 @@ export function SettingsPage() {
               const file = e.target.files?.[0];
               e.target.value = '';
               if (!file) return;
-              if (!confirm('Replace all data in this browser with the imported file?')) return;
+              if (!confirm('Replace the data in this browser with the data in the imported file?')) return;
               try {
-                await importDb(new Uint8Array(await file.arrayBuffer()));
-                setDataMsg(`Imported ${file.name}.`);
+                const kinds = await importDb(new Uint8Array(await file.arrayBuffer()));
+                setDataMsg(`Imported ${kinds.map((k) => KIND_LABEL[k]).join(' and ')} from ${file.name}.`);
               } catch (err) {
                 setDataMsg(`Import failed: ${errorText(err)}`);
               }
             }}
           />
           {dataMsg && <span className="small muted">{dataMsg}</span>}
+        </div>
+      </Panel>
+
+      <Panel title="Danger zone" className="danger-zone">
+        <p className="small muted">
+          Permanently delete data stored in this browser. Disenchant rules and settings go back to their defaults.
+        </p>
+        <div className="add-row">
+          <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+          <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
+          <button className="danger" onClick={() => clear(['data', 'user'])}>Clear all data</button>
+          {clearMsg && <span className="small muted">{clearMsg}</span>}
         </div>
       </Panel>
     </div>
