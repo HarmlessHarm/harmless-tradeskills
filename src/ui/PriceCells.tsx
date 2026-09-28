@@ -10,7 +10,7 @@ export function AhPriceCell({ itemId, pessimistic = false }: { itemId: number; p
   return (
     <MoneyInput
       value={value}
-      placeholder={pessimistic ? 'min price' : 'AH price'}
+      placeholder={pessimistic ? 'min AH price' : 'AH price'}
       onChange={(v) => mutate((repo) => setAhPrice(repo, latest, itemId, pessimistic ? { ahPessimistic: v } : { ahPrice: v }))}
     />
   );

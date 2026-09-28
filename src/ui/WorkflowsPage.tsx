@@ -381,7 +381,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
             </table>
             {analysis.terminalOutputs.some((x) => x.disposition === 'ah') && (
               <p className="small muted">
-                AH value is after the {Math.round(config.ahCut[wf.ahType] * 100)}% cut. The second price is the optional pessimistic price used for the
+                AH value is after the {Math.round(config.ahCut[wf.ahType] * 100)}% cut. The second price is the optional min AH price used for the
                 worst case.
               </p>
             )}
@@ -538,11 +538,11 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
             </div>
             {sim.worstCase !== sim.p50 && (
               <div className="kpi">
-                <span className="kpi-label">With pessimistic AH prices</span>
+                <span className="kpi-label">With min AH prices</span>
                 <span className="kpi-value">
                   <Money value={sim.worstCase} signed />
                 </span>
-                <span className="kpi-sub">same batch, pessimistic sell prices</span>
+                <span className="kpi-sub">same batch, min AH sell prices</span>
               </div>
             )}
           </>
@@ -642,7 +642,7 @@ function BuyLimitResults({ analysis: a, limit, target }: { analysis: WorkflowAna
       </div>
       <p className="small muted">
         Per <ItemName id={limit.itemId} />: outputs sell for <Money value={a.revenuePerUnit} />, other inputs cost <Money value={a.costPerUnit} />. Paying
-        more than the break-even price loses money on average; the safe price also covers bad luck with drops and pessimistic AH prices.
+        more than the break-even price loses money on average; the safe price also covers bad luck with drops and min AH prices.
       </p>
       <ResultNotes analysis={a} />
     </Panel>
