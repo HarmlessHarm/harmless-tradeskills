@@ -774,7 +774,7 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
             ]}
             onChange={(itemClass) => setAny({ ...any, itemClass })}
           />
-          <NumberInput value={any.itemLevel} onChange={(itemLevel) => setAny({ ...any, itemLevel })} min={1} step={1} placeholder="Item level" />
+          <NumberInput className="ilvl-input" value={any.itemLevel} onChange={(itemLevel) => setAny({ ...any, itemLevel })} min={1} step={1} placeholder="Item level" />
         </>
       ) : (
         <DisenchantSearch preferred={deFromWorkflow} onPick={addDisenchant} />

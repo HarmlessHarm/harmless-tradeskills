@@ -514,6 +514,13 @@ select option { background: var(--bg-2); }
   background: var(--panel-2);
   color: var(--gold);
 }
+/* In a row of inputs, match their height and line up with them. */
+.add-step .segmented {
+  align-self: stretch;
+}
+.num-input.ilvl-input {
+  width: 115px;
+}
 
 /* Results */
 .results {
