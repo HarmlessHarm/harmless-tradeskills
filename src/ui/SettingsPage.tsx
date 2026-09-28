@@ -179,6 +179,7 @@ function GeneralSettings() {
         <div className="inline-field">
           <span>Workflows and items use</span>
           <Segmented<AhPriceRule>
+            label="Workflows and items use"
             value={config.ahPriceRule}
             options={[
               { value: 'latest', label: 'Latest price' },

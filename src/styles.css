@@ -254,6 +254,7 @@ input.short {
   margin: 8px 0;
 }
 .field-row label,
+.field-row .seg-field,
 .form-grid label {
   display: flex;
   flex-direction: column;
@@ -1416,14 +1417,16 @@ th.r .sort-btn {
   align-items: flex-end;
   margin-bottom: 12px;
 }
-.calc-inputs label {
+.calc-inputs label,
+.calc-inputs .seg-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
   color: var(--muted);
 }
-.calc-inputs label > * {
+.calc-inputs label > *,
+.calc-inputs .seg-field > .segmented {
   color: var(--text);
 }
 .verdict {

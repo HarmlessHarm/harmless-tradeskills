@@ -241,9 +241,10 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
             Batch size
             <NumberInput value={wf.batchSize} placeholder={String(config.defaultBatchSize)} min={1} step={1} onChange={(v) => save({ batchSize: v })} />
           </label>
-          <label>
-            AH
+          <div className="seg-field">
+            <span>AH</span>
             <Segmented
+              label="AH"
               value={wf.ahType}
               options={[
                 { value: 'faction', label: 'Faction' },
@@ -251,7 +252,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
               ]}
               onChange={(ahType) => save({ ahType })}
             />
-          </label>
+          </div>
           {analysis.buyLimit && (
             <label title="The buy price for this target leaves at least this much gold per hour">
               Target gold/hour

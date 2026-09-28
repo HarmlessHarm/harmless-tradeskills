@@ -399,17 +399,23 @@ export function Panel({ title, actions, children, className = '' }: { title?: Re
   );
 }
 
+/**
+ * A row of mutually exclusive buttons. Give it `label` instead of wrapping it in a <label>: a wrapping
+ * label names only the first button and clicking its text selects that button.
+ */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  label,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  label?: string;
 }) {
   return (
-    <div className="segmented" role="radiogroup">
+    <div className="segmented" role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} role="radio" aria-checked={o.value === value} className={o.value === value ? 'on' : ''} onClick={() => onChange(o.value)}>
           {o.label}

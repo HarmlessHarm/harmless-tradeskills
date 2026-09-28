@@ -451,9 +451,10 @@ function QuickCalc({
           Quantity
           <NumberInput value={settings.qty} min={1} step={1} onChange={(v) => onChange({ qty: Math.max(1, Math.floor(v ?? 1)) })} />
         </label>
-        <label>
-          Auction house
+        <div className="seg-field">
+          <span>Auction house</span>
           <Segmented<AhType>
+            label="Auction house"
             value={settings.ahType}
             options={[
               { value: 'faction', label: 'Faction' },
@@ -461,11 +462,16 @@ function QuickCalc({
             ]}
             onChange={(v) => onChange({ ahType: v })}
           />
-        </label>
-        <label>
-          Duration
-          <Segmented value={settings.durationKey} options={config.durations.map((d) => ({ value: d.key, label: d.label }))} onChange={(v) => onChange({ durationKey: v })} />
-        </label>
+        </div>
+        <div className="seg-field">
+          <span>Duration</span>
+          <Segmented
+            label="Duration"
+            value={settings.durationKey}
+            options={config.durations.map((d) => ({ value: d.key, label: d.label }))}
+            onChange={(v) => onChange({ durationKey: v })}
+          />
+        </div>
       </div>
 
       {res && buy !== null ? (
