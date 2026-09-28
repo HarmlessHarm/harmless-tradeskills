@@ -108,6 +108,21 @@ export function describeStep(data: EngineData, step: WorkflowStep): string {
   return `Disenchant ${data.items.get(step.itemId)?.name ?? `item #${step.itemId}`}`;
 }
 
+/** Known recipes that make an item, by name. */
+export function producersOf(data: EngineData, itemId: number): Recipe[] {
+  return [...data.recipes.values()]
+    .filter((r) => r.outputs.some((o) => o.itemId === itemId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Insert a step right before the first step that uses the item, or at the top if none does. */
+export function insertBeforeConsumer(data: EngineData, steps: WorkflowStep[], itemId: number, step: WorkflowStep): WorkflowStep[] {
+  const at = steps.findIndex((s) => resolveStep(data, s)?.inputs.some((i) => i.itemId === itemId));
+  const next = [...steps];
+  next.splice(at < 0 ? 0 : at, 0, step);
+  return next;
+}
+
 /**
  * Default unit: the item fed into the first non-craft step (e.g. the gloves that get disenchanted),
  * otherwise the first step's main product.

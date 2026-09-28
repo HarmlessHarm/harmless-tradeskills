@@ -920,3 +920,22 @@ th.r .sort-btn {
 .combo-io .hit {
   color: var(--gold);
 }
+.combo.inline-combo {
+  display: inline-block;
+  flex: none;
+  max-width: none;
+}
+.combo-list.combo-right {
+  left: auto;
+  right: 0;
+  width: max-content;
+  min-width: 200px;
+  max-width: 320px;
+  text-align: left;
+}
+.combo-list li:hover {
+  background: var(--bg-2);
+}
+.nowrap {
+  white-space: nowrap;
+}

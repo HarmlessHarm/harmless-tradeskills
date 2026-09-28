@@ -1,7 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
 import { findDisenchantRule } from '../engine/disenchant';
 import type { Recipe, Workflow, WorkflowStep } from '../engine/types';
-import { analyzeWorkflow, describeStep, dispositionFor, resolveStep, type ExternalInput, type WorkflowAnalysis } from '../engine/workflow';
+import {
+  analyzeWorkflow,
+  describeStep,
+  dispositionFor,
+  insertBeforeConsumer,
+  producersOf,
+  resolveStep,
+  type ExternalInput,
+  type WorkflowAnalysis,
+} from '../engine/workflow';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, NumberInput, Panel, Segmented } from './common';
@@ -285,6 +294,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
                 source={source}
                 inputs={analysis.externalInputs.filter((x) => x.source === source)}
                 onMove={(itemId) => save({ buyMap: { ...wf.buyMap, [itemId]: source === 'ah' ? 'vendor' : 'ah' } })}
+                onMake={(itemId, recipeId) => save({ steps: insertBeforeConsumer(engine, wf.steps, itemId, { type: 'recipe', recipeId }) })}
               />
             ))}
           </Panel>
@@ -354,10 +364,12 @@ function BuySection({
   source,
   inputs,
   onMove,
+  onMake,
 }: {
   source: 'ah' | 'vendor';
   inputs: ExternalInput[];
   onMove: (itemId: number) => void;
+  onMake: (itemId: number, recipeId: string) => void;
 }) {
   const total = inputs.reduce((sum, x) => sum + x.qtyPerBatch * (x.unitPrice ?? 0), 0);
   return (
@@ -405,7 +417,8 @@ function BuySection({
                 <td className="r">
                   <Money value={x.costPerUnit} />
                 </td>
-                <td className="r">
+                <td className="r nowrap">
+                  <MakeButton itemId={x.itemId} onPick={(recipeId) => onMake(x.itemId, recipeId)} />{' '}
                   <button
                     className="icon-btn"
                     onClick={() => onMove(x.itemId)}
@@ -421,6 +434,50 @@ function BuySection({
         </table>
       )}
     </section>
+  );
+}
+
+/** Adds a step that makes this item. Hidden when no known recipe makes it; a list when several do. */
+function MakeButton({ itemId, onPick }: { itemId: number; onPick: (recipeId: string) => void }) {
+  const { engine } = useStore();
+  const [open, setOpen] = useState(false);
+  const producers = useMemo(() => producersOf(engine, itemId), [engine, itemId]);
+  if (producers.length === 0) return null;
+  const name = engine.items.get(itemId)?.name ?? `#${itemId}`;
+  const title = producers.length === 1 ? `Add step: ${producers[0].name}` : `Add a step that makes ${name}`;
+  return (
+    <span className="combo inline-combo">
+      <button
+        className="icon-btn"
+        title={title}
+        aria-label={title}
+        aria-expanded={producers.length > 1 ? open : undefined}
+        onClick={() => (producers.length === 1 ? onPick(producers[0].id) : setOpen(!open))}
+        onBlur={() => setOpen(false)}
+      >
+        +
+      </button>
+      {open && (
+        <ul className="combo-list combo-right" role="listbox">
+          {producers.map((r) => (
+            <li
+              key={r.id}
+              role="option"
+              aria-selected={false}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setOpen(false);
+                onPick(r.id);
+              }}
+            >
+              <span className="combo-name">
+                {r.name} <span className="muted small">({r.kind})</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </span>
   );
 }
 

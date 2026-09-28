@@ -4,7 +4,7 @@ import { deShuffle, engineData, IDS } from '../test/fixtures';
 import { deposit, flip, netOnSale } from './ah';
 import { deriveDisenchantRecipe, findDisenchantRule } from './disenchant';
 import { formatMoney, parseMoney } from './money';
-import { analyzeWorkflow } from './workflow';
+import { analyzeWorkflow, insertBeforeConsumer, producersOf } from './workflow';
 
 describe('money', () => {
   it('formats copper as g/s/c', () => {
@@ -208,5 +208,33 @@ describe('workflow: no chance-based outputs', () => {
     expect(sim.runs).toBe(1);
     expect(sim.p5).toBe(sim.p95);
     expect(sim.p50).toBeCloseTo(a.batchProfit);
+  });
+});
+
+describe('workflow: adding a step for a bought input', () => {
+  const data = engineData();
+  const bolt = { type: 'recipe', recipeId: 'spell:2963' } as const;
+
+  it('finds the recipes that make an item', () => {
+    expect(producersOf(data, IDS.bolt).map((r) => r.id)).toEqual(['spell:2963']);
+    expect(producersOf(data, IDS.linen)).toEqual([]);
+  });
+
+  it('inserts the step before the first step that uses the item', () => {
+    const steps = deShuffle.steps.slice(1);
+    const next = insertBeforeConsumer(data, steps, IDS.bolt, bolt);
+    expect(next).toEqual([bolt, ...steps]);
+    const wf = { ...deShuffle, steps: next };
+    expect(analyzeWorkflow(data, wf).externalInputs.map((x) => x.itemId)).toContain(IDS.linen);
+  });
+
+  it('inserts mid-list when the consumer is not the first step', () => {
+    const steps = [deShuffle.steps[0], deShuffle.steps[4]];
+    const wood = { type: 'recipe', recipeId: 'local:wood' } as const;
+    expect(insertBeforeConsumer(data, steps, IDS.wood, wood)).toEqual([steps[0], wood, steps[1]]);
+  });
+
+  it('falls back to the top when no step uses the item', () => {
+    expect(insertBeforeConsumer(data, deShuffle.steps.slice(3), IDS.bolt, bolt)[0]).toEqual(bolt);
   });
 });
