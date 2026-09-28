@@ -422,6 +422,8 @@ label.inline {
 .q3 { color: var(--q3); }
 .q4 { color: var(--q4); }
 .q5 { color: var(--q5); }
+/* Keep quality-coloured options readable on the dark theme. */
+select option { background: var(--bg-2); }
 .unknown {
   color: var(--muted);
 }

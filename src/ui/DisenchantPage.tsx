@@ -5,6 +5,9 @@ import { QUALITY_NAMES, type DisenchantRule, type Quality, type RecipeOutput } f
 import { useStore } from '../state/store';
 import { fmtQty, ItemName, ItemPicker, NumberInput, Panel } from './common';
 
+/** Poor and Common items cannot be disenchanted. */
+const MIN_DE_QUALITY = 2;
+
 /** Manually maintained disenchant rules (REQ-3.1, DEC-2, DEC-7). */
 export function DisenchantPage() {
   const { deRules, engine, mutate } = useStore();
@@ -50,12 +53,14 @@ function RuleCard({ rule, checkCount, matchCount }: { rule: DisenchantRule; chec
       <div className="field-row">
         <label>
           Quality
-          <select value={rule.quality} onChange={(e) => save({ quality: Number(e.target.value) as Quality })}>
-            {QUALITY_NAMES.map((q, i) => (
-              <option key={q} value={i}>
-                {q}
-              </option>
-            ))}
+          <select className={`q${rule.quality}`} value={rule.quality} onChange={(e) => save({ quality: Number(e.target.value) as Quality })}>
+            {QUALITY_NAMES.map((q, i) =>
+              i >= MIN_DE_QUALITY || i === rule.quality ? (
+                <option key={q} value={i} className={`q${i}`}>
+                  {q}
+                </option>
+              ) : null,
+            )}
           </select>
         </label>
         <label>
