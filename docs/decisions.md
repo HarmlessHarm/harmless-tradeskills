@@ -43,6 +43,7 @@
 - **Context**: The Wowhead tooltip endpoint does not expose vendor buy prices or DE result tables; those live on JS-rendered page tabs behind a bot check.
 - **Chosen**: Enter vendor buy prices and DE rules manually.
 - **Why**: Only a handful of vendor reagents (thread, vial, seed, wood) and a few low-level DE brackets are needed at first. DE rules can be sanity-checked against the DE Tracker addon's lifetime totals (37 uncommon DEs gave 46 Strange Dust and 13 Lesser Magic Essence, roughly consistent with 80/20 at 1 to 2 each).
+- **Update**: Vendor buy prices can also be pasted in bulk: copy rows from a vendor's "Sells" table on Wowhead in the browser, and the copied HTML's money spans give each item's cost (Items page, "Vendor prices"). Paste from a vendor that sells at the base price (DEC-8).
 
 ## DEC-8: Reputation discounts deferred; store base prices only
 - **Context**: Vendor prices can be discounted by reputation with the vendor's faction.
