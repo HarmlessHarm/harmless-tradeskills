@@ -5,6 +5,7 @@ import type { AhDuration, Config } from '../engine/types';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel } from './common';
+import { DisenchantPage } from './DisenchantPage';
 
 const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
 const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data' };
@@ -15,37 +16,46 @@ const KIND_CONTENTS: Record<DbKind, string> = {
 
 const pct = (x: number) => Math.round(x * 10000) / 100;
 
-export function SettingsPage() {
-  const { config, mutate, mutateAsync, exportDb, importDb, clearDb } = useStore();
+const SECTIONS = [
+  { key: 'general', label: 'General', sub: 'Auction house, time', Section: GeneralSettings },
+  { key: 'data', label: 'Data', sub: 'Wowhead, backups', Section: DataSettings },
+  { key: 'disenchant', label: 'Disenchant rules', sub: 'Seeded, rarely edited', Section: DisenchantPage },
+] as const;
+
+type SectionKey = (typeof SECTIONS)[number]['key'];
+
+export function SettingsPage({ sub }: { sub?: string }) {
+  const section: SectionKey = SECTIONS.find((s) => s.key === sub)?.key ?? 'general';
+  const { Section } = SECTIONS.find((s) => s.key === section)!;
+
+  return (
+    <div className="split">
+      <aside className="sidebar">
+        <div className="sidebar-head">
+          <h2>Settings</h2>
+        </div>
+        <ul className="wf-list">
+          {SECTIONS.map((s) => (
+            <li key={s.key}>
+              <a className={`wf-item ${s.key === section ? 'on' : ''}`} href={`#settings/${s.key}`}>
+                <span className="wf-name">{s.label}</span>
+                <span className="wf-sub muted">{s.sub}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </aside>
+      <div className="main">
+        <Section />
+      </div>
+    </div>
+  );
+}
+
+function GeneralSettings() {
+  const { config, mutate } = useStore();
   const save = (patch: Partial<Config>) => mutate((repo) => repo.saveConfig({ ...config, ...patch }));
   const setDuration = (i: number, patch: Partial<AhDuration>) => save({ durations: config.durations.map((d, k) => (k === i ? { ...d, ...patch } : d)) });
-
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [dataMsg, setDataMsg] = useState<string | null>(null);
-  const [days, setDays] = useState<number | null>(30);
-  const [progress, setProgress] = useState<string | null>(null);
-  const [clearMsg, setClearMsg] = useState<string | null>(null);
-
-  const clear = async (kinds: DbKind[]) => {
-    const what = kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`).join(' and ');
-    if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
-    try {
-      await clearDb(kinds);
-      setClearMsg(`Cleared ${kinds.map((k) => KIND_LABEL[k]).join(' and ')}.`);
-    } catch (err) {
-      setClearMsg(`Clearing failed: ${errorText(err)}`);
-    }
-  };
-
-  const download = (kind: DbKind) => {
-    const bytes = exportDb(kind);
-    const blob = new Blob([bytes.slice().buffer], { type: 'application/vnd.sqlite3' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `harmless-tradeskills-${FILE_NAME[kind]}-${new Date().toISOString().slice(0, 10)}.sqlite`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
 
   return (
     <div className="stack narrow">
@@ -118,7 +128,41 @@ export function SettingsPage() {
         </div>
         <p className="small muted">Per-action overhead is idle time between casts. Per-batch overhead covers vendor walks, buying and posting.</p>
       </Panel>
+    </div>
+  );
+}
 
+function DataSettings() {
+  const { mutateAsync, exportDb, importDb, clearDb } = useStore();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dataMsg, setDataMsg] = useState<string | null>(null);
+  const [days, setDays] = useState<number | null>(30);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [clearMsg, setClearMsg] = useState<string | null>(null);
+
+  const clear = async (kinds: DbKind[]) => {
+    const what = kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`).join(' and ');
+    if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
+    try {
+      await clearDb(kinds);
+      setClearMsg(`Cleared ${kinds.map((k) => KIND_LABEL[k]).join(' and ')}.`);
+    } catch (err) {
+      setClearMsg(`Clearing failed: ${errorText(err)}`);
+    }
+  };
+
+  const download = (kind: DbKind) => {
+    const bytes = exportDb(kind);
+    const blob = new Blob([bytes.slice().buffer], { type: 'application/vnd.sqlite3' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `harmless-tradeskills-${FILE_NAME[kind]}-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  return (
+    <div className="stack narrow">
       <Panel title="Wowhead data">
         <p className="small muted">Items and recipes are fetched once and cached. Refresh records older than a number of days, one request at a time.</p>
         <div className="add-row">

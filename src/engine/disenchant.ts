@@ -48,6 +48,9 @@ export function anyItemId(quality: Quality, itemClass: 'armor' | 'weapon', itemL
 
 export const isAnyItem = (itemId: number) => itemId < 0;
 
+/** Wowhead icon of the Disenchant spell, shown for "any item" stand-ins. */
+export const DISENCHANT_ICON = 'spell_holy_removecurse';
+
 /** The stand-in item for an "any item" ID. Its name shows the level band of the matching rule. */
 export function anyItem(rules: DisenchantRule[], itemId: number): Item | null {
   if (!isAnyItem(itemId)) return null;
@@ -64,7 +67,7 @@ export function anyItem(rules: DisenchantRule[], itemId: number): Item | null {
     subclass: null,
     vendorSell: null,
     vendorBuy: null,
-    icon: null,
+    icon: DISENCHANT_ICON,
   };
   const rule = findDisenchantRule(rules, item);
   const band = rule ? `ilvl ${rule.ilvlMin}-${rule.ilvlMax}` : `ilvl ${itemLevel}`;

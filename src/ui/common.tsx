@@ -114,7 +114,7 @@ export function ItemName({ id, link = false }: { id: number; link?: boolean }) {
   if (any) {
     return (
       <span className="item-name">
-        <span className="icon icon-empty" />
+        <ItemIcon item={any} />
         <span className={`q${any.quality}`}>{any.name}</span>
       </span>
     );
@@ -275,7 +275,6 @@ export function Combo<T>({
 }
 
 const ITEM_PICKER_LIMIT = 50;
-const NONE: number[] = [];
 
 /**
  * Pick an item from the catalog by name, or type an ID (a missing ID is imported on demand).
@@ -285,16 +284,11 @@ export function ItemPicker({
   onChange,
   filter,
   placeholder = 'Item name or ID',
-  preferred = NONE,
-  preferredLabel,
 }: {
   value: number | null;
   onChange: (id: number | null) => void;
   filter?: (item: Item) => boolean;
   placeholder?: string;
-  /** Items listed first, in this order, with `preferredLabel` as their hint. */
-  preferred?: number[];
-  preferredLabel?: string;
 }) {
   const { engine, mutateAsync } = useStore();
   const label = (id: number | null) => {
@@ -307,19 +301,15 @@ export function ItemPicker({
 
   const typedId = /^#?(\d+)$/.exec(text.trim());
   const options = useMemo(() => {
-    const rank = (id: number) => {
-      const i = preferred.indexOf(id);
-      return i < 0 ? preferred.length : i;
-    };
     // The box still shows the current pick: list everything, so the list is useful on focus.
     const showAll = text === label(value);
     const terms = showAll ? [] : text.toLowerCase().split(/\s+/).filter(Boolean);
     return [...engine.items.values()]
       .filter((i) => !filter || filter(i))
       .filter((i) => (typedId && !showAll ? i.id === Number(typedId[1]) : terms.every((t) => `${i.name.toLowerCase()} #${i.id}`.includes(t))))
-      .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name))
+      .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, ITEM_PICKER_LIMIT);
-  }, [engine.items, filter, preferred, text, value]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [engine.items, filter, text, value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (id: number | null) => {
     if (id !== value) onChange(id);
@@ -352,7 +342,6 @@ export function ItemPicker({
         <span className="combo-name">
           <ItemIcon item={i} />
           <span className={`q${i.quality}`}>{i.name}</span> <span className="muted small">#{i.id}</span>
-          {preferredLabel && preferred.includes(i.id) && <span className="combo-tag small">{preferredLabel}</span>}
         </span>
       )}
     />

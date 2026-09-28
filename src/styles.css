@@ -185,6 +185,22 @@ input.short {
   color: var(--text);
   border-bottom-color: var(--gold);
 }
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.line-icon {
+  flex: none;
+}
+.tab-divider {
+  align-self: center;
+  width: 1px;
+  height: 20px;
+  margin: 0 8px;
+  background: var(--line);
+  flex: none;
+}
 .content {
   padding: 20px;
   max-width: 1400px;
@@ -325,6 +341,12 @@ label.inline {
   padding: 8px 10px;
   background: transparent;
   border-color: transparent;
+}
+a.wf-item {
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  text-decoration: none;
 }
 .wf-item.on {
   background: var(--panel);
@@ -507,6 +529,13 @@ select option { background: var(--bg-2); }
 .segmented button.on {
   background: var(--panel-2);
   color: var(--gold);
+}
+/* In a row of inputs, match their height and line up with them. */
+.add-step .segmented {
+  align-self: stretch;
+}
+.num-input.ilvl-input {
+  width: 115px;
 }
 
 /* Results */
@@ -889,7 +918,6 @@ th.r .sort-btn {
 }
 .combo.recipe-search {
   flex: 1 1 320px;
-  max-width: 520px;
 }
 .combo-input {
   width: 100%;
@@ -938,8 +966,21 @@ th.r .sort-btn {
   background: var(--bg-2);
   color: var(--gold);
 }
+.combo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+.combo-item .icon {
+  width: 14px;
+  height: 14px;
+}
+/* Matched reagents keep their quality colour, so mark them with an underline instead. */
 .combo-io .hit {
-  color: var(--gold);
+  text-decoration: underline;
+  text-decoration-color: var(--gold);
+  text-underline-offset: 2px;
 }
 .combo.inline-combo {
   display: inline-block;

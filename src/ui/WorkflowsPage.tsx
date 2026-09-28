@@ -15,7 +15,7 @@ import {
 } from '../engine/workflow';
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
-import { Combo, errorText, fmtQty, formatDuration, ItemName, ItemPicker, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
+import { Combo, errorText, fmtQty, formatDuration, ItemIcon, ItemName, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 import { searchRecipes } from './recipeSearch';
 
@@ -704,7 +704,6 @@ const disenchantable = (i: Item) => (i.itemClass === 'armor' || i.itemClass === 
 function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outputs: number[] }) {
   const { engine, recipeRecords, mutateAsync } = useStore();
   const [mode, setMode] = useState<'recipe' | 'disenchant' | 'disenchant-any'>('recipe');
-  const [deItem, setDeItem] = useState<number | null>(null);
   const [any, setAny] = useState<{ quality: Quality; itemClass: 'armor' | 'weapon'; itemLevel: number | null }>({
     quality: 2,
     itemClass: 'armor',
@@ -713,19 +712,16 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
   const [err, setErr] = useState<string | null>(null);
   const recipes = recipeRecords.map((r) => engine.recipes.get(r.id)!).sort((a, b) => a.name.localeCompare(b.name));
 
-  const addDisenchant = async () => {
+  const addDisenchant = async (itemId: number) => {
     setErr(null);
-    if (deItem !== null) {
-      if (!engine.items.has(deItem)) {
-        try {
-          await mutateAsync((repo) => importItem(repo, deItem));
-        } catch (e) {
-          return setErr(errorText(e));
-        }
+    if (!engine.items.has(itemId)) {
+      try {
+        await mutateAsync((repo) => importItem(repo, itemId));
+      } catch (e) {
+        return setErr(errorText(e));
       }
-      onAdd({ type: 'disenchant', itemId: deItem });
-      setDeItem(null);
     }
+    onAdd({ type: 'disenchant', itemId });
   };
 
   const addAny = () => {
@@ -738,8 +734,11 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
     const it = engine.items.get(id);
     return it !== undefined && disenchantable(it);
   });
-  const deItemObj = deItem !== null ? engine.items.get(deItem) : undefined;
-  const noRule = deItemObj && !findDisenchantRule(engine.deRules, deItemObj);
+  // Recipes that take something this workflow makes come first.
+  const recipesFromWorkflow = useMemo(
+    () => new Set(recipes.filter((r) => r.inputs.some((x) => outputs.includes(x.itemId))).map((r) => r.id)),
+    [recipes, outputs],
+  );
   const anyRule =
     any.itemLevel !== null
       ? findDisenchantRule(engine.deRules, itemFor(engine, anyItemId(any.quality, any.itemClass, any.itemLevel))!)
@@ -757,12 +756,17 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
         onChange={setMode}
       />
       {mode === 'recipe' ? (
-        <RecipeSearch recipes={recipes} onPick={(r) => onAdd({ type: 'recipe', recipeId: r.id })} />
+        <RecipeSearch recipes={recipes} preferred={recipesFromWorkflow} onPick={(r) => onAdd({ type: 'recipe', recipeId: r.id })} />
       ) : mode === 'disenchant-any' ? (
         <>
-          <select value={any.quality} onChange={(e) => setAny({ ...any, quality: Number(e.target.value) as Quality })} aria-label="Quality">
+          <select
+            className={`q${any.quality}`}
+            value={any.quality}
+            onChange={(e) => setAny({ ...any, quality: Number(e.target.value) as Quality })}
+            aria-label="Quality"
+          >
             {([2, 3, 4] as const).map((q) => (
-              <option key={q} value={q}>
+              <option key={q} value={q} className={`q${q}`}>
                 {QUALITY_NAMES[q]}
               </option>
             ))}
@@ -775,20 +779,11 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
             ]}
             onChange={(itemClass) => setAny({ ...any, itemClass })}
           />
-          <NumberInput value={any.itemLevel} onChange={(itemLevel) => setAny({ ...any, itemLevel })} min={1} step={1} placeholder="Item level" />
+          <NumberInput className="ilvl-input" value={any.itemLevel} onChange={(itemLevel) => setAny({ ...any, itemLevel })} min={1} step={1} placeholder="Item level" />
         </>
       ) : (
-        <ItemPicker
-          value={deItem}
-          onChange={setDeItem}
-          filter={disenchantable}
-          preferred={deFromWorkflow}
-          preferredLabel="made in this workflow"
-          placeholder="Item to disenchant"
-        />
+        <DisenchantSearch preferred={deFromWorkflow} onPick={addDisenchant} />
       )}
-      {mode === 'disenchant' && <button onClick={addDisenchant}>Add step</button>}
-      {mode === 'disenchant' && noRule && <span className="small warn">No disenchant rule matches this item yet.</span>}
       {mode === 'disenchant-any' && (
         <>
           <button onClick={addAny}>Add step</button>
@@ -805,11 +800,10 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
 }
 
 /** Search box for recipes by recipe, reagent or product name. Picking a result adds it. */
-function RecipeSearch({ recipes, onPick }: { recipes: Recipe[]; onPick: (r: Recipe) => void }) {
+function RecipeSearch({ recipes, preferred, onPick }: { recipes: Recipe[]; preferred: ReadonlySet<string>; onPick: (r: Recipe) => void }) {
   const { engine } = useStore();
   const [query, setQuery] = useState('');
-  const matches = useMemo(() => searchRecipes(recipes, engine.items, query), [recipes, engine.items, query]);
-  const itemName = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
+  const matches = useMemo(() => searchRecipes(recipes, engine.items, query, { preferred }), [recipes, engine.items, query, preferred]);
 
   return (
     <Combo
@@ -825,28 +819,116 @@ function RecipeSearch({ recipes, onPick }: { recipes: Recipe[]; onPick: (r: Reci
       placeholder={recipes.length ? 'Search recipe, reagent or product...' : 'No recipes yet, import some first'}
       disabled={!recipes.length}
       empty="No recipe matches."
-      renderOption={({ recipe: r, matchedItems }) => (
-        <>
-          <span className="combo-name">
-            {r.name} <span className="muted small">({r.kind})</span>
-          </span>
-          <span className="combo-io small muted">
-            {r.inputs.map((x, k) => (
-              <span key={k} className={matchedItems.includes(x.itemId) ? 'hit' : ''}>
-                {k > 0 && ' + '}
-                {x.qty} {itemName(x.itemId)}
+      renderOption={({ recipe: r, matchedItems }) => {
+        // A recipe named after what it makes shows that item's icon and quality colour.
+        const product = r.outputs.map((o) => engine.items.get(o.itemId)).find((i) => i?.name === r.name);
+        return (
+          <>
+            <span className="combo-name">
+              {product && <ItemIcon item={product} />}
+              <span className={product ? `q${product.quality}` : ''}>{r.name}</span> <span className="muted small">({r.kind})</span>
+              {preferred.has(r.id) && <span className="combo-tag small">uses workflow output</span>}
+            </span>
+            <span className="combo-io small muted">
+              {r.inputs.map((x, k) => (
+                <span key={k}>
+                  {k > 0 && ' + '}
+                  {x.qty} <ComboItem id={x.itemId} hit={matchedItems.includes(x.itemId)} />
+                </span>
+              ))}
+              {' → '}
+              {r.outputs.map((o, k) => (
+                <span key={k}>
+                  {k > 0 && ', '}
+                  <ComboItem id={o.itemId} hit={matchedItems.includes(o.itemId)} />
+                </span>
+              ))}
+            </span>
+          </>
+        );
+      }}
+    />
+  );
+}
+
+/** Small icon and quality-coloured name for the second line of a search result. */
+function ComboItem({ id, hit = false }: { id: number; hit?: boolean }) {
+  const { engine } = useStore();
+  const item = engine.items.get(id);
+  return (
+    <span className={`combo-item ${hit ? 'hit' : ''}`}>
+      <ItemIcon item={item} />
+      <span className={item ? `q${item.quality}` : ''}>{item?.name ?? `#${id}`}</span>
+    </span>
+  );
+}
+
+const DE_SEARCH_LIMIT = 50;
+
+/**
+ * Search box for an item to disenchant, styled like the recipe search. Picking a result adds it;
+ * Enter on a typed item ID that is not in the catalog imports it first.
+ */
+function DisenchantSearch({ preferred, onPick }: { preferred: number[]; onPick: (itemId: number) => void }) {
+  const { engine } = useStore();
+  const [query, setQuery] = useState('');
+  const typedId = /^#?(\d+)$/.exec(query.trim());
+  const matches = useMemo(() => {
+    const rank = (id: number) => {
+      const i = preferred.indexOf(id);
+      return i < 0 ? preferred.length : i;
+    };
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return [...engine.items.values()]
+      .filter(disenchantable)
+      .filter((i) => (typedId ? i.id === Number(typedId[1]) : terms.every((t) => i.name.toLowerCase().includes(t))))
+      .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name))
+      .slice(0, DE_SEARCH_LIMIT);
+  }, [engine.items, preferred, query]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pick = (id: number) => {
+    onPick(id);
+    setQuery('');
+  };
+
+  return (
+    <Combo
+      className="recipe-search"
+      text={query}
+      onText={setQuery}
+      options={matches}
+      optionKey={(i) => i.id}
+      onPick={(i) => pick(i.id)}
+      onCommit={() => typedId && !engine.items.has(Number(typedId[1])) && pick(Number(typedId[1]))}
+      placeholder="Search item to disenchant, or type an item ID..."
+      empty={typedId ? `Press Enter to import item #${typedId[1]}` : 'No item matches. Type an item ID to import it.'}
+      renderOption={(i) => {
+        const rule = findDisenchantRule(engine.deRules, i);
+        return (
+          <>
+            <span className="combo-name">
+              <ItemIcon item={i} />
+              <span className={`q${i.quality}`}>{i.name}</span>
+              <span className="muted small">
+                ilvl {i.itemLevel ?? '?'} {i.itemClass}
               </span>
-            ))}
-            {' → '}
-            {r.outputs.map((o, k) => (
-              <span key={k} className={matchedItems.includes(o.itemId) ? 'hit' : ''}>
-                {k > 0 && ', '}
-                {itemName(o.itemId)}
+              {preferred.includes(i.id) && <span className="combo-tag small">made in this workflow</span>}
+            </span>
+            {rule ? (
+              <span className="combo-io small muted">
+                →{' '}
+                {rule.outputs.map((o, k) => (
+                  <span key={k}>
+                    {k > 0 && ', '}
+                    <ComboItem id={o.itemId} />
+                  </span>
+                ))}
               </span>
-            ))}
-          </span>
-        </>
-      )}
+            ) : (
+              <span className="combo-io small warn">No disenchant rule matches this item yet.</span>
+            )}
+          </>
+        );
+      }}
     />
   );
 }
