@@ -172,3 +172,52 @@ export async function refreshStale(
   }
   return errors;
 }
+
+export interface VendorPriceResult {
+  /** Items whose vendor buy price changed. */
+  updated: number;
+  /** Items that already had this price. */
+  unchanged: number;
+  /** Items fetched from Wowhead because they were not in the catalog yet. */
+  imported: number;
+  errors: string[];
+}
+
+/**
+ * Store pasted vendor prices as vendor buy prices (REQ-1.5). Items not in the catalog are
+ * imported from Wowhead first, one request at a time. Prices are stored as given, so paste
+ * from a vendor that sells at the base price (DEC-8).
+ */
+export async function importVendorPrices(
+  repo: Repo,
+  rows: { itemId: number; price: number }[],
+  onProgress: (done: number, total: number) => void,
+  fetcher?: Fetcher,
+): Promise<VendorPriceResult> {
+  const result: VendorPriceResult = { updated: 0, unchanged: 0, imported: 0, errors: [] };
+  let fetched = false;
+  onProgress(0, rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const { itemId, price } = rows[i];
+    let record = repo.listItems().find((it) => it.id === itemId);
+    if (!record) {
+      if (fetched) await sleep(BULK_DELAY_MS);
+      fetched = true;
+      try {
+        record = await importItem(repo, itemId, { fetcher });
+        result.imported++;
+      } catch (e) {
+        result.errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (record) {
+      if (record.vendorBuy === price) result.unchanged++;
+      else {
+        repo.saveItem({ ...record, vendorBuy: price, updatedAt: Date.now() });
+        result.updated++;
+      }
+    }
+    onProgress(i + 1, rows.length);
+  }
+  return result;
+}

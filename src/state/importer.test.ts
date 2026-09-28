@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
 import { migrate, Repo } from '../db/repo';
-import { bulkImport, importRecipe } from './importer';
+import { bulkImport, importRecipe, importVendorPrices } from './importer';
 
 /** Serves the saved real Wowhead responses; unknown IDs get a minimal item. */
 const fetcher = async (url: string) => {
@@ -39,5 +39,26 @@ describe('importer professions', () => {
 
     await importRecipe(repo, 2963, { force: true, fetcher });
     expect(repo.listRecipes().find((r) => r.id === 'spell:2963')!.imported.profession).toBe('Tailoring');
+  });
+});
+
+describe('importVendorPrices', () => {
+  it('sets vendor buy prices, importing items that are missing', async () => {
+    const repo = await freshRepo();
+    await importRecipe(repo, 2963, { fetcher });
+    const known = repo.listItems()[0];
+    repo.saveItem({ ...known, vendorBuy: 50 });
+    const res = await importVendorPrices(
+      repo,
+      [
+        { itemId: known.id, price: 50 },
+        { itemId: 999_001, price: 1234 },
+      ],
+      () => {},
+      fetcher,
+    );
+    expect(res).toEqual({ updated: 1, unchanged: 1, imported: 1, errors: [] });
+    expect(repo.listItems().find((i) => i.id === 999_001)!.vendorBuy).toBe(1234);
+    expect(repo.listItems().find((i) => i.id === known.id)!.vendorBuy).toBe(50);
   });
 });

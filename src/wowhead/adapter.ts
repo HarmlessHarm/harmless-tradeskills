@@ -75,6 +75,63 @@ export function extractProfessions(html: string): string[] {
   return [...names];
 }
 
+export interface PastedVendorPrice {
+  itemId: number;
+  name: string | null;
+  /** Price in copper as listed on the page. */
+  price: number;
+}
+
+const MONEY_SPAN = /<span\b[^>]*\bclass\s*=\s*["'][^"']*\bmoney(gold|silver|copper)\b[^"']*["'][^>]*>\s*([\d,]+)\s*<\/span>/gi;
+const MONEY_UNIT = { gold: 10_000, silver: 100, copper: 1 } as const;
+
+/** The first run of gold/silver/copper spans in a chunk of HTML, in copper; null if there is none. */
+function firstMoney(html: string): number | null {
+  const re = new RegExp(MONEY_SPAN.source, 'gi');
+  let total: number | null = null;
+  let lastEnd = -1;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    // Only spans next to each other form one amount; a later one belongs to another cell.
+    if (total !== null && tooltipText(html.slice(lastEnd, m.index)) !== '') break;
+    total = (total ?? 0) + Number(m[2].replace(/,/g, '')) * MONEY_UNIT[m[1].toLowerCase() as keyof typeof MONEY_UNIT];
+    lastEnd = m.index + m[0].length;
+  }
+  return total;
+}
+
+/**
+ * Items and their prices from rows copied out of a vendor's "Sells" table on Wowhead. The copied
+ * HTML shows the cost as money spans (plain text drops the units, so "1 5" could be 1s 5c or
+ * 1g 5c). Each item's price is the first amount after its link, up to the next item's link.
+ * Rows without a gold price (token or item costs) are left out.
+ */
+export function extractVendorPrices(html: string): PastedVendorPrice[] {
+  const rows = /<tr\b/i.test(html) ? html.split(/<tr\b/i) : [html];
+  const found = new Map<number, PastedVendorPrice>();
+  for (const row of rows) {
+    const links: { id: number; name: string; start: number; end: number }[] = [];
+    const anchors = /<a\b[^>]*\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    for (let m = anchors.exec(row); m; m = anchors.exec(row)) {
+      const ref = /[/?&]item=(\d+)/i.exec(m[1]);
+      if (!ref) continue;
+      const name = decodeEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+      const id = Number(ref[1]);
+      const prev = links[links.length - 1];
+      // The icon and the name both link the item; treat them as one.
+      if (prev && prev.id === id) {
+        prev.end = m.index + m[0].length;
+        if (!prev.name) prev.name = name;
+      } else links.push({ id, name, start: m.index, end: m.index + m[0].length });
+    }
+    links.forEach((l, i) => {
+      const price = firstMoney(row.slice(l.end, links[i + 1]?.start ?? row.length));
+      if (price === null || found.has(l.id)) return;
+      found.set(l.id, { itemId: l.id, name: l.name || null, price });
+    });
+  }
+  return [...found.values()];
+}
+
 export interface TooltipResponse {
   name: string;
   quality?: number;
