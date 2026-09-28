@@ -27,7 +27,6 @@ export function netOnSale(config: Config, salePrice: Copper, ahType: AhType): Co
 export interface FlipInput {
   buyPrice: Copper;
   sellPrice: Copper;
-  qty: number;
   vendorSellEach: Copper | null;
   durationKey: string;
   ahType: AhType;
@@ -38,7 +37,7 @@ export interface FlipResult {
   deposit: Copper;
   /** Profit if it sells on the first listing. */
   profitFirstListing: Copper;
-  /** Deposit lost per expired listing (REQ-5.2). */
+  /** Deposit lost per expired listing (REQ-5.2). The minimum deposit applies per item. */
   costPerFailedListing: Copper;
   /**
    * How many listings can expire before the flip stops being profitable.
@@ -49,10 +48,13 @@ export interface FlipResult {
   breakEvenSellPrice: Copper;
 }
 
-/** Prices are for the whole listing (stack). */
+/**
+ * Prices are per item. The retail-style AH lists every item as its own stack of one, so a flip of
+ * any size is that many identical one-item flips, each with its own deposit.
+ */
 export function flip(config: Config, input: FlipInput): FlipResult {
   const cut = Math.floor(input.sellPrice * config.ahCut[input.ahType]);
-  const dep = deposit(config, input.vendorSellEach, input.qty, input.durationKey, input.ahType);
+  const dep = deposit(config, input.vendorSellEach, 1, input.durationKey, input.ahType);
   const profitFirstListing = input.sellPrice - cut - input.buyPrice;
   let failedListingsAbsorbed: number | null;
   if (profitFirstListing < 0) failedListingsAbsorbed = -1;

@@ -153,3 +153,12 @@ export interface Config {
   /** Cast time of Disenchant, used for derived DE recipes. */
   disenchantCastMs: number;
 }
+
+/** A saved flip-calculator item with the prices and settings last used for it (REQ-7.3). */
+export interface FlipFavorite {
+  itemId: number;
+  buyPrice: Copper | null;
+  sellPrice: Copper | null;
+  durationKey: string;
+  ahType: AhType;
+}

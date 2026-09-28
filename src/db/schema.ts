@@ -3,6 +3,8 @@
  * workflow steps) are JSON text columns; everything that is looked up or filtered on is a column.
  * Append a migration to add changes; never edit an old one.
  */
+import { deSeedMigration } from './deSeed';
+
 export const MIGRATIONS: string[] = [
   `
   CREATE TABLE items (
@@ -65,6 +67,7 @@ export const MIGRATIONS: string[] = [
     (2, 5, 15, 'armor', '[{"itemId":10940,"chance":0.8,"minQty":1,"maxQty":2},{"itemId":10938,"chance":0.2,"minQty":1,"maxQty":2}]', 'Classic values, unverified for Forever'),
     (2, 5, 15, 'weapon', '[{"itemId":10940,"chance":0.2,"minQty":1,"maxQty":2},{"itemId":10938,"chance":0.8,"minQty":1,"maxQty":2}]', 'Classic values, unverified for Forever');
   `,
+  deSeedMigration(),
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

@@ -8,6 +8,7 @@ import { parseWowheadRef, tooltipText, wowheadUrl } from '../wowhead/adapter';
 import { ago, errorText, ItemName, Money, MoneyInput, NumberInput, Panel } from './common';
 import { deleteConfirmText, itemUsage } from '../state/usage';
 import { BulkImport } from './BulkImport';
+import { VendorPriceImport } from './VendorPriceImport';
 import { RowActions, RowCheckbox, SelectAll, SelectionBar, useSelection } from './Selection';
 import { useEditSession } from './useEditSession';
 import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
@@ -69,7 +70,7 @@ export function ItemsPage() {
   const editing = edit.editing;
   const [newId, setNewId] = useState<number | null>(null);
   const [newName, setNewName] = useState('');
-  const [bulk, setBulk] = useState(false);
+  const [bulk, setBulk] = useState<'items' | 'vendor' | null>(null);
 
   const q = search.trim().toLowerCase();
   const ahPrice = new Map(prices.map((p) => [p.itemId, p.ahPrice]));
@@ -112,9 +113,18 @@ export function ItemsPage() {
 
   return (
     <div className="stack">
-      <Panel title="Import items" actions={!bulk && <button onClick={() => setBulk(true)}>Bulk import</button>}>
+      <Panel
+        title="Import items"
+        actions={
+          <>
+            {bulk !== 'items' && <button onClick={() => setBulk('items')}>Bulk import</button>}
+            {bulk !== 'vendor' && <button onClick={() => setBulk('vendor')}>Vendor prices</button>}
+          </>
+        }
+      >
         <ImportBox defaultType="item" />
-        {bulk && <BulkImport onClose={() => setBulk(false)} />}
+        {bulk === 'items' && <BulkImport onClose={() => setBulk(null)} />}
+        {bulk === 'vendor' && <VendorPriceImport onClose={() => setBulk(null)} />}
         <div className="add-manual small">
           <span className="muted">Add by hand:</span>
           <NumberInput value={newId} onChange={setNewId} placeholder="Item ID" />

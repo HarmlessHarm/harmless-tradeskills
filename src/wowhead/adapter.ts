@@ -75,6 +75,97 @@ export function extractProfessions(html: string): string[] {
   return [...names];
 }
 
+export interface PastedVendorPrice {
+  itemId: number;
+  name: string | null;
+  /** Price in copper for one item: the listed cost divided by the stack size. */
+  price: number;
+  /** How many the vendor sells for the listed cost; 1 unless the row shows a stack count. */
+  stack: number;
+  /** The listed cost in copper, for the whole stack. */
+  stackPrice: number;
+  /** The Type column, such as "Trade Good" or "Tailoring Pattern", when the row has one. */
+  type: string | null;
+  /** Wowhead's item class ID from the Type column's link (2 weapon, 4 armor, 7 trade goods, ...). */
+  classId: number | null;
+}
+
+/** The first link to an item class list (the Type column, /items=7.5) in a chunk of a row. */
+function itemType(html: string): { type: string | null; classId: number | null } {
+  const m = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&]items=(\d+)(?:\.\d+)*[^"']*["'][^>]*>([\s\S]*?)<\/a>/i.exec(html);
+  if (!m) return { type: null, classId: null };
+  const type = decodeEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+  return { type: type || null, classId: Number(m[1]) };
+}
+
+/**
+ * Stack count on an item icon, such as the "5" on a vendor's stack of vials. Wowhead draws it as
+ * text inside the icon, so it is the only number in the table cell that holds the icon link.
+ */
+function stackCount(row: string, linkStart: number, linkEnd: number): number {
+  const cellStart = row.lastIndexOf('<td', linkStart);
+  const cellEnd = row.indexOf('</td>', linkEnd);
+  if (cellStart < 0 || cellEnd < 0) return 1;
+  const cell = row.slice(cellStart, cellEnd).replace(/<a\b[\s\S]*?<\/a>/gi, '');
+  const n = /\b(\d+)\b/.exec(tooltipText(cell.replace(/^<td[^>]*>/i, '')));
+  return n && Number(n[1]) > 1 ? Number(n[1]) : 1;
+}
+
+const MONEY_SPAN = /<span\b[^>]*\bclass\s*=\s*["'][^"']*\bmoney(gold|silver|copper)\b[^"']*["'][^>]*>\s*([\d,]+)\s*<\/span>/gi;
+const MONEY_UNIT = { gold: 10_000, silver: 100, copper: 1 } as const;
+
+/** The first run of gold/silver/copper spans in a chunk of HTML, in copper; null if there is none. */
+function firstMoney(html: string): number | null {
+  const re = new RegExp(MONEY_SPAN.source, 'gi');
+  let total: number | null = null;
+  let lastEnd = -1;
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    // Only spans next to each other form one amount; a later one belongs to another cell.
+    if (total !== null && tooltipText(html.slice(lastEnd, m.index)) !== '') break;
+    total = (total ?? 0) + Number(m[2].replace(/,/g, '')) * MONEY_UNIT[m[1].toLowerCase() as keyof typeof MONEY_UNIT];
+    lastEnd = m.index + m[0].length;
+  }
+  return total;
+}
+
+/**
+ * Items and their prices from rows copied out of a vendor's "Sells" table on Wowhead. The copied
+ * HTML shows the cost as money spans (plain text drops the units, so "1 5" could be 1s 5c or
+ * 1g 5c). Each item's price is the first amount after its link, up to the next item's link.
+ * A stack count on the item's icon (vendors sell some items only in stacks) divides the cost, so
+ * the price is always for one item. The Type column's link gives the item's class. Rows without a gold price (token or item costs) are left out.
+ */
+export function extractVendorPrices(html: string): PastedVendorPrice[] {
+  const rows = /<tr\b/i.test(html) ? html.split(/<tr\b/i) : [html];
+  const found = new Map<number, PastedVendorPrice>();
+  for (const row of rows) {
+    // `first*` is the item's first link (the icon, when there is one); `end` is past its last.
+    const links: { id: number; name: string; start: number; firstEnd: number; end: number }[] = [];
+    const anchors = /<a\b[^>]*\bhref\s*=\s*["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    for (let m = anchors.exec(row); m; m = anchors.exec(row)) {
+      const ref = /[/?&]item=(\d+)/i.exec(m[1]);
+      if (!ref) continue;
+      const name = decodeEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+      const id = Number(ref[1]);
+      const prev = links[links.length - 1];
+      // The icon and the name both link the item; treat them as one.
+      if (prev && prev.id === id) {
+        prev.end = m.index + m[0].length;
+        if (!prev.name) prev.name = name;
+      } else links.push({ id, name, start: m.index, firstEnd: m.index + m[0].length, end: m.index + m[0].length });
+    }
+    links.forEach((l, i) => {
+      const rest = row.slice(l.end, links[i + 1]?.start ?? row.length);
+      const stackPrice = firstMoney(rest);
+      if (stackPrice === null || found.has(l.id)) return;
+      // Only an icon link separate from the name link can carry a stack count.
+      const stack = l.firstEnd < l.end ? stackCount(row, l.start, l.firstEnd) : 1;
+      found.set(l.id, { itemId: l.id, name: l.name || null, price: stackPrice / stack, stack, stackPrice, ...itemType(rest) });
+    });
+  }
+  return [...found.values()];
+}
+
 export interface TooltipResponse {
   name: string;
   quality?: number;

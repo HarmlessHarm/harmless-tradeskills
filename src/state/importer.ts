@@ -1,5 +1,5 @@
 import type { Repo } from '../db/repo';
-import type { ItemRecord, RecipeRecord } from '../engine/types';
+import type { ItemClass, ItemFields, ItemRecord, RecipeRecord } from '../engine/types';
 import { fetchTooltip, parseItemTooltip, parseSpellTooltip, type Fetcher, type WowheadRef } from '../wowhead/adapter';
 
 /**
@@ -171,4 +171,66 @@ export async function refreshStale(
     await sleep(BULK_DELAY_MS);
   }
   return errors;
+}
+
+export interface VendorPriceResult {
+  /** Items whose vendor buy price changed. */
+  updated: number;
+  /** Items that already had this price. */
+  unchanged: number;
+  /** Items fetched from Wowhead because they were not in the catalog yet. */
+  imported: number;
+  errors: string[];
+}
+
+/**
+ * Fill in the item's type from a pasted Type column, as a base value, where the tooltip gave none.
+ * A type the tooltip did give is kept. Returns the same object when nothing changes.
+ */
+function withPastedType(fields: ItemFields, row: { type?: string | null; classId?: number | null }): ItemFields {
+  const itemClass: ItemClass =
+    fields.itemClass === 'other' && row.classId === 2 ? 'weapon' : fields.itemClass === 'other' && row.classId === 4 ? 'armor' : fields.itemClass;
+  const subclass = fields.subclass ?? row.type ?? null;
+  return itemClass === fields.itemClass && subclass === fields.subclass ? fields : { ...fields, itemClass, subclass };
+}
+
+/**
+ * Store pasted vendor prices as vendor buy prices (REQ-1.5), and the pasted type where the item has none. Items not in the catalog are
+ * imported from Wowhead first, one request at a time. Prices are stored as given, so paste
+ * from a vendor that sells at the base price (DEC-8).
+ */
+export async function importVendorPrices(
+  repo: Repo,
+  rows: { itemId: number; price: number; type?: string | null; classId?: number | null }[],
+  onProgress: (done: number, total: number) => void,
+  fetcher?: Fetcher,
+): Promise<VendorPriceResult> {
+  const result: VendorPriceResult = { updated: 0, unchanged: 0, imported: 0, errors: [] };
+  let fetched = false;
+  onProgress(0, rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    const { itemId, price } = rows[i];
+    let record = repo.listItems().find((it) => it.id === itemId);
+    if (!record) {
+      if (fetched) await sleep(BULK_DELAY_MS);
+      fetched = true;
+      try {
+        record = await importItem(repo, itemId, { fetcher });
+        result.imported++;
+      } catch (e) {
+        result.errors.push(e instanceof Error ? e.message : String(e));
+      }
+    }
+    if (record) {
+      const imported = withPastedType(record.imported, rows[i]);
+      if (record.vendorBuy === price && imported === record.imported) result.unchanged++;
+      else {
+        repo.saveItem({ ...record, imported, vendorBuy: price, updatedAt: Date.now() });
+        if (record.vendorBuy === price) result.unchanged++;
+        else result.updated++;
+      }
+    }
+    onProgress(i + 1, rows.length);
+  }
+  return result;
 }

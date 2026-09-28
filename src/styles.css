@@ -367,6 +367,12 @@ label.inline {
   border-bottom: 1px solid rgba(44, 52, 65, 0.6);
   vertical-align: middle;
 }
+/* Shrink a column to its content; the remaining width goes to the other columns. */
+.table .tight {
+  width: 1%;
+  white-space: nowrap;
+  padding-right: 20px;
+}
 .table tr:last-child td {
   border-bottom: none;
 }
@@ -422,6 +428,8 @@ label.inline {
 .q3 { color: var(--q3); }
 .q4 { color: var(--q4); }
 .q5 { color: var(--q5); }
+/* Keep quality-coloured options readable on the dark theme. */
+select option { background: var(--bg-2); }
 .unknown {
   color: var(--muted);
 }
@@ -604,20 +612,6 @@ label.inline {
   color: var(--gold);
   margin-right: 8px;
   font-weight: 600;
-}
-
-/* Disenchant rules */
-.rules {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 10px;
-}
-.rule-card {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 10px 12px;
-  background: var(--bg-2);
 }
 
 .chips {
@@ -955,4 +949,33 @@ th.r .sort-btn {
 }
 .nowrap {
   white-space: nowrap;
+}
+
+/* AH flip: buy and sell side by side, two columns even on narrow screens. */
+.form-grid.flip-form {
+  grid-template-columns: 1fr 1fr;
+}
+.flip-form .span-2 {
+  grid-column: span 2;
+}
+.flip-form .money-input,
+.flip-form select {
+  width: 100%;
+}
+.picker-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.picker-row .item-picker {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+.row-icon.fav {
+  color: var(--gold);
+  font-size: 16px;
+}
+.fav-chip.on {
+  border-color: var(--gold-dim);
 }

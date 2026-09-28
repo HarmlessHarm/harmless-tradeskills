@@ -42,7 +42,7 @@ describe('AH channel', () => {
   });
   it('matches a hand calculation for a flip', () => {
     // Buy 1g, sell 1g 50s, 8h faction, vendor sell 20s: cut 7s 50c, deposit 3s.
-    const r = flip(cfg, { buyPrice: 10_000, sellPrice: 15_000, qty: 1, vendorSellEach: 2000, durationKey: '8h', ahType: 'faction' });
+    const r = flip(cfg, { buyPrice: 10_000, sellPrice: 15_000, vendorSellEach: 2000, durationKey: '8h', ahType: 'faction' });
     expect(r.cut).toBe(750);
     expect(r.deposit).toBe(300);
     expect(r.profitFirstListing).toBe(4_250);
@@ -53,8 +53,12 @@ describe('AH channel', () => {
     expect(netOnSale(cfg, r.breakEvenSellPrice - 1, 'faction')).toBeLessThan(10_000);
   });
   it('flags a flip that loses money', () => {
-    const r = flip(cfg, { buyPrice: 10_000, sellPrice: 10_000, qty: 1, vendorSellEach: 0, durationKey: '2h', ahType: 'faction' });
+    const r = flip(cfg, { buyPrice: 10_000, sellPrice: 10_000, vendorSellEach: 0, durationKey: '2h', ahType: 'faction' });
     expect(r.failedListingsAbsorbed).toBe(-1);
+  });
+  it('charges the minimum deposit per item, since every item is its own listing', () => {
+    const r = flip(cfg, { buyPrice: 100, sellPrice: 200, vendorSellEach: 1, durationKey: '8h', ahType: 'faction' });
+    expect(r.costPerFailedListing).toBe(cfg.minDeposit);
   });
 });
 
