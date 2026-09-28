@@ -122,3 +122,11 @@
 - **Why**: Everything after the disenchant (oil, wands, vendor buys, time, simulation) is an ordinary workflow, so a tab would duplicate it. Every item in a DE rule band disenchants the same, so one stand-in item per band is exact. The stand-in has a negative ID that encodes quality, type and level, so it never clashes with a WoW ID and needs no storage.
 - **Outputs, per item**: break-even (expected profit zero); safe max (the P5 batch, with pessimistic AH prices, breaks even); and the price that still earns a per-workflow target gold per hour, which is the "optimum" since it also pays for the time spent. Profit figures of such a workflow leave the item's cost out. Prices round down to whole copper.
 - **Limitation**: One "any item" per workflow gets a limit; a range that spans several rule bands would need a mix of rules and is not modelled.
+
+## DEC-21: Game data and personal data in separate databases
+- **Context**: The user wants to share item and recipe data with other players without handing over their workflows and flip favorites.
+- **Options considered**: (A) one database with a filtered "share" export; (B) two database files, each with its own migrations.
+- **Chosen**: B. `data` holds items, recipes and disenchant rules; `user` holds workflows, flip favorites, price observations and settings. Each file is tagged with a `PRAGMA application_id`, so an import is recognised and replaces only the database it holds.
+- **Why**: A shared file is then just the other player's game data export, with nothing to filter. Prices and settings stay personal: prices are observations of one player's market and go stale, and settings include personal time overheads.
+- **Migration**: The old combined file (no application_id) is brought up to date with the frozen legacy migrations, copied into both files and the other kind's tables dropped. This happens on first load and when importing an old export.
+- **Limitation**: Importing replaces; it does not merge someone else's game data into yours.

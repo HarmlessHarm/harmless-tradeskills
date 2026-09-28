@@ -106,6 +106,12 @@ button.danger:hover:not(:disabled) {
   border-color: var(--neg);
   color: var(--neg);
 }
+.panel.danger-zone {
+  border-color: color-mix(in srgb, var(--neg) 45%, var(--line));
+}
+.panel.danger-zone h2 {
+  color: var(--neg);
+}
 .link-btn {
   background: none;
   border: none;

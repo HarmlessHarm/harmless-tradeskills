@@ -1,7 +1,6 @@
-import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
-import { migrate, Repo } from '../db/repo';
 import type { RecipeRecord } from '../engine/types';
+import { freshRepo } from '../test/db';
 import { setProfession } from './actions';
 
 const recipe = (id: string, profession: string | null, overrides: RecipeRecord['overrides'] = {}): RecipeRecord => ({
@@ -17,10 +16,7 @@ const recipe = (id: string, profession: string | null, overrides: RecipeRecord['
 
 describe('setProfession (bulk edit)', () => {
   it('sets the base value, drops a profession override, and counts only real changes', async () => {
-    const SQL = await initSqlJs();
-    const db = new SQL.Database();
-    migrate(db);
-    const repo = new Repo(db);
+    const repo = await freshRepo();
     const recs = [recipe('a', null), recipe('b', 'Tailoring'), recipe('c', 'Tailoring', { profession: 'Alchemy', name: 'C!' })];
     recs.forEach((r) => repo.saveRecipe(r));
 
