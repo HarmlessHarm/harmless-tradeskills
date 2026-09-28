@@ -759,9 +759,14 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
         <RecipeSearch recipes={recipes} preferred={recipesFromWorkflow} onPick={(r) => onAdd({ type: 'recipe', recipeId: r.id })} />
       ) : mode === 'disenchant-any' ? (
         <>
-          <select value={any.quality} onChange={(e) => setAny({ ...any, quality: Number(e.target.value) as Quality })} aria-label="Quality">
+          <select
+            className={`q${any.quality}`}
+            value={any.quality}
+            onChange={(e) => setAny({ ...any, quality: Number(e.target.value) as Quality })}
+            aria-label="Quality"
+          >
             {([2, 3, 4] as const).map((q) => (
-              <option key={q} value={q}>
+              <option key={q} value={q} className={`q${q}`}>
                 {QUALITY_NAMES[q]}
               </option>
             ))}
