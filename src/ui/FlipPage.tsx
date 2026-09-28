@@ -16,9 +16,9 @@ type SortKey = 'name' | 'last' | 'typical' | 'n' | 'buyBelow' | 'sellAt' | 'marg
 /** Fewer snapshots than this and the typical price is a guess. */
 const THIN_DATA = 5;
 /** An unstarred favorite stays this long before it fades, so a misclick can be undone. */
-const LEAVE_DELAY_MS = 3000;
+const LEAVE_DELAY_MS = 1000;
 /** Then it fades out over this long and is removed. Keep in sync with the CSS transition. */
-const LEAVE_FADE_MS = 2000;
+const LEAVE_FADE_MS = 3000;
 
 type LeavePhase = 'wait' | 'fade';
 
