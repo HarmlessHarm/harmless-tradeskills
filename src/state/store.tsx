@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { openBrowserDbs, openDbsFromBytes, persist, persister } from '../db/browser';
+import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } from '../db/browser';
 import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
@@ -26,6 +26,8 @@ interface StoreValue extends Snapshot {
   exportDb: (kind: DbKind) => Uint8Array;
   /** Replaces the database(s) the file holds and returns which were replaced. */
   importDb: (bytes: Uint8Array) => Promise<DbKind[]>;
+  /** Replaces the given databases with empty ones. */
+  clearDb: (kinds: DbKind[]) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -84,6 +86,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<StoreValue | null>(() => {
     if (!repo || !snap) return null;
     const refresh = () => setSnap(readSnapshot(repo));
+    /** Swaps in the given databases and returns which were replaced. */
+    const replace = async (dbs: Partial<Dbs>): Promise<DbKind[]> => {
+      const kinds = (Object.keys(dbs) as DbKind[]).sort();
+      const current = dbsRef.current!;
+      // A pending debounced save reads dbsRef, so after the swap it saves the new database.
+      for (const kind of kinds) await persist(kind, dbs[kind]!);
+      for (const kind of kinds) current[kind].close();
+      attach({ ...current, ...dbs });
+      return kinds;
+    };
     const engine: EngineData = {
       items: new Map(snap.itemRecords.map((r) => [r.id, effectiveItem(r)])),
       recipes: new Map(snap.recipeRecords.map((r) => [r.id, effectiveRecipe(r)])),
@@ -110,17 +122,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
       exportDb: (kind) => repo[kind].export(),
-      importDb: async (bytes) => {
-        const imported = await openDbsFromBytes(bytes);
-        const kinds = (Object.keys(imported) as DbKind[]).sort();
-        const current = dbsRef.current!;
-        // A pending debounced save reads dbsRef, so after the swap it saves the imported database.
-        for (const kind of kinds) await persist(kind, imported[kind]!);
-        const next: Dbs = { ...current, ...imported };
-        for (const kind of kinds) current[kind].close();
-        attach(next);
-        return kinds;
-      },
+      importDb: async (bytes) => replace(await openDbsFromBytes(bytes)),
+      clearDb: async (kinds) => void (await replace(await openFreshDbs(kinds))),
     };
   }, [repo, snap, attach]);
 

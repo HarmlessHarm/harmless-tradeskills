@@ -61,6 +61,18 @@ export async function openDbsFromBytes(bytes: Uint8Array): Promise<Partial<Dbs>>
   }
 }
 
+/** New empty databases of the given kinds, as on first use (disenchant rules are seeded again). */
+export async function openFreshDbs(kinds: DbKind[]): Promise<Partial<Dbs>> {
+  const SQL = await sql();
+  const dbs: Partial<Dbs> = {};
+  for (const kind of kinds) {
+    const db = new SQL.Database();
+    migrate(db, kind);
+    dbs[kind] = db;
+  }
+  return dbs;
+}
+
 export async function persist(kind: DbKind, db: Database): Promise<void> {
   await set(KEYS[kind], db.export());
 }

@@ -8,11 +8,15 @@ import { errorText, MoneyInput, NumberInput, Panel } from './common';
 
 const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal' };
 const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data' };
+const KIND_CONTENTS: Record<DbKind, string> = {
+  data: 'items, recipes, disenchant rules',
+  user: 'workflows, flip favorites, prices, settings',
+};
 
 const pct = (x: number) => Math.round(x * 10000) / 100;
 
 export function SettingsPage() {
-  const { config, mutate, mutateAsync, exportDb, importDb } = useStore();
+  const { config, mutate, mutateAsync, exportDb, importDb, clearDb } = useStore();
   const save = (patch: Partial<Config>) => mutate((repo) => repo.saveConfig({ ...config, ...patch }));
   const setDuration = (i: number, patch: Partial<AhDuration>) => save({ durations: config.durations.map((d, k) => (k === i ? { ...d, ...patch } : d)) });
 
@@ -20,6 +24,18 @@ export function SettingsPage() {
   const [dataMsg, setDataMsg] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(30);
   const [progress, setProgress] = useState<string | null>(null);
+  const [clearMsg, setClearMsg] = useState<string | null>(null);
+
+  const clear = async (kinds: DbKind[]) => {
+    const what = kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`).join(' and ');
+    if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
+    try {
+      await clearDb(kinds);
+      setClearMsg(`Cleared ${kinds.map((k) => KIND_LABEL[k]).join(' and ')}.`);
+    } catch (err) {
+      setClearMsg(`Clearing failed: ${errorText(err)}`);
+    }
+  };
 
   const download = (kind: DbKind) => {
     const bytes = exportDb(kind);
@@ -156,6 +172,18 @@ export function SettingsPage() {
             }}
           />
           {dataMsg && <span className="small muted">{dataMsg}</span>}
+        </div>
+      </Panel>
+
+      <Panel title="Danger zone" className="danger-zone">
+        <p className="small muted">
+          Permanently delete data stored in this browser. Disenchant rules and settings go back to their defaults.
+        </p>
+        <div className="add-row">
+          <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+          <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
+          <button className="danger" onClick={() => clear(['data', 'user'])}>Clear all data</button>
+          {clearMsg && <span className="small muted">{clearMsg}</span>}
         </div>
       </Panel>
     </div>
