@@ -2,7 +2,7 @@ import { useState, type ClipboardEvent } from 'react';
 import { bulkImport, type BulkResult } from '../state/importer';
 import { useStore } from '../state/store';
 import { professionOptions } from '../professions';
-import { extractProfessions, extractWowheadRefs, type PastedRef } from '../wowhead/adapter';
+import { extractProfessions, extractWowheadRefs, withoutProfessionSpells, type PastedRef } from '../wowhead/adapter';
 import { errorText } from './common';
 
 const key = (r: PastedRef) => `${r.type}:${r.id}`;
@@ -28,9 +28,9 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
   const onPaste = (e: ClipboardEvent) => {
     e.preventDefault();
     const html = e.clipboardData.getData('text/html');
-    const found = extractWowheadRefs(html, e.clipboardData.getData('text/plain'));
     // A selection from one profession's recipe list names that profession; use it as the default.
     const profs = extractProfessions(html);
+    const found = withoutProfessionSpells(extractWowheadRefs(html, e.clipboardData.getData('text/plain')), profs);
     setProfession(profs.length === 1 ? profs[0] : '');
     setRefs(found);
     setResult(null);
