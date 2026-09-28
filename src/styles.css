@@ -944,8 +944,21 @@ th.r .sort-btn {
   background: var(--bg-2);
   color: var(--gold);
 }
+.combo-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  vertical-align: middle;
+}
+.combo-item .icon {
+  width: 14px;
+  height: 14px;
+}
+/* Matched reagents keep their quality colour, so mark them with an underline instead. */
 .combo-io .hit {
-  color: var(--gold);
+  text-decoration: underline;
+  text-decoration-color: var(--gold);
+  text-underline-offset: 2px;
 }
 .combo.inline-combo {
   display: inline-block;

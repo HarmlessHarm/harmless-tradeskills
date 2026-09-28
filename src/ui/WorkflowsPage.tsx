@@ -799,7 +799,6 @@ function RecipeSearch({ recipes, preferred, onPick }: { recipes: Recipe[]; prefe
   const { engine } = useStore();
   const [query, setQuery] = useState('');
   const matches = useMemo(() => searchRecipes(recipes, engine.items, query, { preferred }), [recipes, engine.items, query, preferred]);
-  const itemName = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
 
   return (
     <Combo
@@ -815,30 +814,47 @@ function RecipeSearch({ recipes, preferred, onPick }: { recipes: Recipe[]; prefe
       placeholder={recipes.length ? 'Search recipe, reagent or product...' : 'No recipes yet, import some first'}
       disabled={!recipes.length}
       empty="No recipe matches."
-      renderOption={({ recipe: r, matchedItems }) => (
-        <>
-          <span className="combo-name">
-            {r.name} <span className="muted small">({r.kind})</span>
-            {preferred.has(r.id) && <span className="combo-tag small">uses workflow output</span>}
-          </span>
-          <span className="combo-io small muted">
-            {r.inputs.map((x, k) => (
-              <span key={k} className={matchedItems.includes(x.itemId) ? 'hit' : ''}>
-                {k > 0 && ' + '}
-                {x.qty} {itemName(x.itemId)}
-              </span>
-            ))}
-            {' → '}
-            {r.outputs.map((o, k) => (
-              <span key={k} className={matchedItems.includes(o.itemId) ? 'hit' : ''}>
-                {k > 0 && ', '}
-                {itemName(o.itemId)}
-              </span>
-            ))}
-          </span>
-        </>
-      )}
+      renderOption={({ recipe: r, matchedItems }) => {
+        // A recipe named after what it makes shows that item's icon and quality colour.
+        const product = r.outputs.map((o) => engine.items.get(o.itemId)).find((i) => i?.name === r.name);
+        return (
+          <>
+            <span className="combo-name">
+              {product && <ItemIcon item={product} />}
+              <span className={product ? `q${product.quality}` : ''}>{r.name}</span> <span className="muted small">({r.kind})</span>
+              {preferred.has(r.id) && <span className="combo-tag small">uses workflow output</span>}
+            </span>
+            <span className="combo-io small muted">
+              {r.inputs.map((x, k) => (
+                <span key={k}>
+                  {k > 0 && ' + '}
+                  {x.qty} <ComboItem id={x.itemId} hit={matchedItems.includes(x.itemId)} />
+                </span>
+              ))}
+              {' → '}
+              {r.outputs.map((o, k) => (
+                <span key={k}>
+                  {k > 0 && ', '}
+                  <ComboItem id={o.itemId} hit={matchedItems.includes(o.itemId)} />
+                </span>
+              ))}
+            </span>
+          </>
+        );
+      }}
     />
+  );
+}
+
+/** Small icon and quality-coloured name for the second line of a search result. */
+function ComboItem({ id, hit = false }: { id: number; hit?: boolean }) {
+  const { engine } = useStore();
+  const item = engine.items.get(id);
+  return (
+    <span className={`combo-item ${hit ? 'hit' : ''}`}>
+      <ItemIcon item={item} />
+      <span className={item ? `q${item.quality}` : ''}>{item?.name ?? `#${id}`}</span>
+    </span>
   );
 }
 
@@ -864,7 +880,6 @@ function DisenchantSearch({ preferred, onPick }: { preferred: number[]; onPick: 
       .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name))
       .slice(0, DE_SEARCH_LIMIT);
   }, [engine.items, preferred, query]); // eslint-disable-line react-hooks/exhaustive-deps
-  const itemName = (id: number) => engine.items.get(id)?.name ?? `#${id}`;
   const pick = (id: number) => {
     onPick(id);
     setQuery('');
@@ -894,7 +909,15 @@ function DisenchantSearch({ preferred, onPick }: { preferred: number[]; onPick: 
               {preferred.includes(i.id) && <span className="combo-tag small">made in this workflow</span>}
             </span>
             {rule ? (
-              <span className="combo-io small muted">→ {rule.outputs.map((o) => itemName(o.itemId)).join(', ')}</span>
+              <span className="combo-io small muted">
+                →{' '}
+                {rule.outputs.map((o, k) => (
+                  <span key={k}>
+                    {k > 0 && ', '}
+                    <ComboItem id={o.itemId} />
+                  </span>
+                ))}
+              </span>
             ) : (
               <span className="combo-io small warn">No disenchant rule matches this item yet.</span>
             )}
