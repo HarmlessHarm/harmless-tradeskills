@@ -61,4 +61,20 @@ describe('importVendorPrices', () => {
     expect(repo.listItems().find((i) => i.id === 999_001)!.vendorBuy).toBe(1234);
     expect(repo.listItems().find((i) => i.id === known.id)!.vendorBuy).toBe(50);
   });
+  it('fills in a pasted type only where the item has none', async () => {
+    const repo = await freshRepo();
+    await importVendorPrices(
+      repo,
+      [
+        { itemId: 999_002, price: 10, type: 'Trade Good', classId: 7 },
+        { itemId: 4307, price: 10, type: 'Something Else', classId: 4 },
+      ],
+      () => {},
+      fetcher,
+    );
+    const items = repo.listItems();
+    expect(items.find((i) => i.id === 999_002)!.imported).toMatchObject({ itemClass: 'other', subclass: 'Trade Good' });
+    // Heavy Linen Gloves: the tooltip already says Cloth armor.
+    expect(items.find((i) => i.id === 4307)!.imported).toMatchObject({ itemClass: 'armor', subclass: 'Cloth' });
+  });
 });

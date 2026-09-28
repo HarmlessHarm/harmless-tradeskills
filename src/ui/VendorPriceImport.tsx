@@ -19,6 +19,8 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
   const [hint, setHint] = useState<string | null>(null);
 
   const current = (id: number) => itemRecords.find((r) => r.id === id);
+  const addsType = (r: PastedVendorPrice) => r.type !== null && current(r.itemId)?.imported.subclass === null;
+  const changes = (r: PastedVendorPrice) => current(r.itemId)?.vendorBuy !== r.price || addsType(r);
 
   const onPaste = (e: ClipboardEvent) => {
     e.preventDefault();
@@ -27,7 +29,7 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
     setRows(found);
     setResult(null);
     // Preselect what would change; items not in the catalog yet only if they are not recipes.
-    setPicked(new Set(found.filter((r) => current(r.itemId)?.vendorBuy !== r.price && !(!current(r.itemId) && isRecipeItem(r))).map((r) => r.itemId)));
+    setPicked(new Set(found.filter((r) => (current(r.itemId) ? changes(r) : !isRecipeItem(r))).map((r) => r.itemId)));
     if (found.length) setHint(null);
     else if (extractWowheadRefs(html).some((r) => r.type === 'item'))
       setHint('Found item links but no prices in that paste. Copy rows from a vendor\'s "Sells" table, including the Cost column.');
@@ -65,7 +67,7 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
       </div>
       <p className="small muted">
         On a vendor's Wowhead Forever page, select rows in the "Sells" table and copy them. Paste below. The listed cost is saved as each item's
-        vendor buy price (per item: a stack's cost is divided by its size), so pick a vendor that sells at the base price (no reputation discount).
+        vendor buy price (per item: a stack's cost is divided by its size), and the Type column fills in the item type where it has none. Pick a vendor that sells at the base price (no reputation discount).
       </p>
       <textarea className="paste-zone" rows={3} placeholder="Paste here (Ctrl+V)" onPaste={onPaste} value="" onChange={() => {}} />
       {hint && <p className="small warn">{hint}</p>}
@@ -84,6 +86,7 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
                     />
                   </th>
                   <th>Item</th>
+                  <th>Type</th>
                   <th>Vendor price</th>
                   <th>Current</th>
                   <th />
@@ -92,7 +95,7 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
               <tbody>
                 {rows.map((r) => {
                   const rec = current(r.itemId);
-                  const status = !rec ? 'not in catalog' : rec.vendorBuy === r.price ? 'same' : rec.vendorBuy === null ? 'new price' : 'changed';
+                  const status = !rec ? 'not in catalog' : rec.vendorBuy === r.price ? (addsType(r) ? 'adds type' : 'same') : rec.vendorBuy === null ? 'new price' : 'changed';
                   return (
                     <tr key={r.itemId} className={picked.has(r.itemId) ? 'selected' : ''}>
                       <td className="check">
@@ -106,6 +109,7 @@ export function VendorPriceImport({ onClose }: { onClose: () => void }) {
                       <td>
                         {r.name ?? <span className="muted">unnamed</span>} <span className="muted small">#{r.itemId}</span>
                       </td>
+                      <td className="small">{r.type ?? <span className="muted">-</span>}</td>
                       <td>
                         <Money value={r.price} />
                         {r.stack > 1 && (

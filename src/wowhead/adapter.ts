@@ -84,6 +84,18 @@ export interface PastedVendorPrice {
   stack: number;
   /** The listed cost in copper, for the whole stack. */
   stackPrice: number;
+  /** The Type column, such as "Trade Good" or "Tailoring Pattern", when the row has one. */
+  type: string | null;
+  /** Wowhead's item class ID from the Type column's link (2 weapon, 4 armor, 7 trade goods, ...). */
+  classId: number | null;
+}
+
+/** The first link to an item class list (the Type column, /items=7.5) in a chunk of a row. */
+function itemType(html: string): { type: string | null; classId: number | null } {
+  const m = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&]items=(\d+)(?:\.\d+)*[^"']*["'][^>]*>([\s\S]*?)<\/a>/i.exec(html);
+  if (!m) return { type: null, classId: null };
+  const type = decodeEntities(m[2].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+  return { type: type || null, classId: Number(m[1]) };
 }
 
 /**
@@ -121,7 +133,7 @@ function firstMoney(html: string): number | null {
  * HTML shows the cost as money spans (plain text drops the units, so "1 5" could be 1s 5c or
  * 1g 5c). Each item's price is the first amount after its link, up to the next item's link.
  * A stack count on the item's icon (vendors sell some items only in stacks) divides the cost, so
- * the price is always for one item. Rows without a gold price (token or item costs) are left out.
+ * the price is always for one item. The Type column's link gives the item's class. Rows without a gold price (token or item costs) are left out.
  */
 export function extractVendorPrices(html: string): PastedVendorPrice[] {
   const rows = /<tr\b/i.test(html) ? html.split(/<tr\b/i) : [html];
@@ -143,11 +155,12 @@ export function extractVendorPrices(html: string): PastedVendorPrice[] {
       } else links.push({ id, name, start: m.index, firstEnd: m.index + m[0].length, end: m.index + m[0].length });
     }
     links.forEach((l, i) => {
-      const stackPrice = firstMoney(row.slice(l.end, links[i + 1]?.start ?? row.length));
+      const rest = row.slice(l.end, links[i + 1]?.start ?? row.length);
+      const stackPrice = firstMoney(rest);
       if (stackPrice === null || found.has(l.id)) return;
       // Only an icon link separate from the name link can carry a stack count.
       const stack = l.firstEnd < l.end ? stackCount(row, l.start, l.firstEnd) : 1;
-      found.set(l.id, { itemId: l.id, name: l.name || null, price: stackPrice / stack, stack, stackPrice });
+      found.set(l.id, { itemId: l.id, name: l.name || null, price: stackPrice / stack, stack, stackPrice, ...itemType(rest) });
     });
   }
   return [...found.values()];

@@ -1,5 +1,5 @@
 import type { Repo } from '../db/repo';
-import type { ItemRecord, RecipeRecord } from '../engine/types';
+import type { ItemClass, ItemFields, ItemRecord, RecipeRecord } from '../engine/types';
 import { fetchTooltip, parseItemTooltip, parseSpellTooltip, type Fetcher, type WowheadRef } from '../wowhead/adapter';
 
 /**
@@ -184,13 +184,24 @@ export interface VendorPriceResult {
 }
 
 /**
- * Store pasted vendor prices as vendor buy prices (REQ-1.5). Items not in the catalog are
+ * Fill in the item's type from a pasted Type column, as a base value, where the tooltip gave none.
+ * A type the tooltip did give is kept. Returns the same object when nothing changes.
+ */
+function withPastedType(fields: ItemFields, row: { type?: string | null; classId?: number | null }): ItemFields {
+  const itemClass: ItemClass =
+    fields.itemClass === 'other' && row.classId === 2 ? 'weapon' : fields.itemClass === 'other' && row.classId === 4 ? 'armor' : fields.itemClass;
+  const subclass = fields.subclass ?? row.type ?? null;
+  return itemClass === fields.itemClass && subclass === fields.subclass ? fields : { ...fields, itemClass, subclass };
+}
+
+/**
+ * Store pasted vendor prices as vendor buy prices (REQ-1.5), and the pasted type where the item has none. Items not in the catalog are
  * imported from Wowhead first, one request at a time. Prices are stored as given, so paste
  * from a vendor that sells at the base price (DEC-8).
  */
 export async function importVendorPrices(
   repo: Repo,
-  rows: { itemId: number; price: number }[],
+  rows: { itemId: number; price: number; type?: string | null; classId?: number | null }[],
   onProgress: (done: number, total: number) => void,
   fetcher?: Fetcher,
 ): Promise<VendorPriceResult> {
@@ -211,10 +222,12 @@ export async function importVendorPrices(
       }
     }
     if (record) {
-      if (record.vendorBuy === price) result.unchanged++;
+      const imported = withPastedType(record.imported, rows[i]);
+      if (record.vendorBuy === price && imported === record.imported) result.unchanged++;
       else {
-        repo.saveItem({ ...record, vendorBuy: price, updatedAt: Date.now() });
-        result.updated++;
+        repo.saveItem({ ...record, imported, vendorBuy: price, updatedAt: Date.now() });
+        if (record.vendorBuy === price) result.unchanged++;
+        else result.updated++;
       }
     }
     onProgress(i + 1, rows.length);

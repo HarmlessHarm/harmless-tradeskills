@@ -49,7 +49,7 @@ describe('extractVendorPrices', () => {
   const row = (id: number, name: string, cost: string) =>
     `<tr><td><a href="/forever/item=${id}"><ins></ins></a></td><td><span>Updated</span></td>
      <td><a href="https://www.wowhead.com/forever/item=${id}/x" class="q1">${name}</a></td><td>20</td>
-     <td><a href="/forever/items?filter=vendors">Vendors</a></td><td>Trade Good</td><td>${cost}</td></tr>`;
+     <td><a href="/forever/items?filter=vendors">Vendors</a></td><td><a href="/forever/items=7.11">Trade Good</a></td><td>${cost}</td></tr>`;
   const money = (g: number, s: number, c: number) =>
     [g && `<span class="moneygold">${g}</span>`, s && `<span class="moneysilver">${s}</span>`, c && `<span class="moneycopper">${c}</span>`].filter(Boolean).join(' ');
 
@@ -60,9 +60,9 @@ describe('extractVendorPrices', () => {
       money(1, 0, 5),
     )}</tbody></table>`;
     expect(extractVendorPrices(html)).toEqual([
-      { itemId: 2320, name: 'Coarse Thread', price: 10, stack: 1, stackPrice: 10 },
-      { itemId: 2321, name: 'Fine Thread', price: 105, stack: 1, stackPrice: 105 },
-      { itemId: 14341, name: 'Rune Thread', price: 10005, stack: 1, stackPrice: 10005 },
+      { itemId: 2320, name: 'Coarse Thread', price: 10, stack: 1, stackPrice: 10, type: 'Trade Good', classId: 7 },
+      { itemId: 2321, name: 'Fine Thread', price: 105, stack: 1, stackPrice: 105, type: 'Trade Good', classId: 7 },
+      { itemId: 14341, name: 'Rune Thread', price: 10005, stack: 1, stackPrice: 10005, type: 'Trade Good', classId: 7 },
     ]);
   });
   it('divides a stack\'s cost by the count on its icon, not by numbers in other cells', () => {
@@ -70,13 +70,13 @@ describe('extractVendorPrices', () => {
     const html = `<table><tr><td><div class="iconsmall"><a href="/forever/item=3371"></a><span class="glow q1"><div>5</div><div>5</div></span></div></td>
       <td>Updated<br>Requirements changed (1)</td><td><a href="/forever/item=3371/empty-vial">Empty Vial</a></td>
       <td><span class="moneysilver">1</span></td></tr></table>`;
-    expect(extractVendorPrices(html)).toEqual([{ itemId: 3371, name: 'Empty Vial', price: 20, stack: 5, stackPrice: 100 }]);
+    expect(extractVendorPrices(html)).toEqual([{ itemId: 3371, name: 'Empty Vial', price: 20, stack: 5, stackPrice: 100, type: null, classId: null }]);
   });
   it('works without row tags and skips rows without a money cost', () => {
     const html = `<a href="/forever/item=1">A</a> <span class="moneysilver">2</span><a href="/forever/item=2">B</a> 3 <a href="/forever/item=3">C</a><span class="moneycopper">7</span>`;
     expect(extractVendorPrices(html)).toEqual([
-      { itemId: 1, name: 'A', price: 200, stack: 1, stackPrice: 200 },
-      { itemId: 3, name: 'C', price: 7, stack: 1, stackPrice: 7 },
+      { itemId: 1, name: 'A', price: 200, stack: 1, stackPrice: 200, type: null, classId: null },
+      { itemId: 3, name: 'C', price: 7, stack: 1, stackPrice: 7, type: null, classId: null },
     ]);
   });
 });
