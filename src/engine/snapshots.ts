@@ -1,3 +1,4 @@
+import { parseMoney } from './money';
 import type { AhType, Copper } from './types';
 
 /**
@@ -185,4 +186,62 @@ export function weightedMedian(values: { value: number; weight: number }[]): num
     if (Math.abs(acc - total / 2) < 1e-9) return Math.round((rows[i].value + rows[i + 1].value) / 2);
   }
   return rows[rows.length - 1].value;
+}
+
+/**
+ * Reads order book rows typed by hand: "100x56c 450x58c", "20 x 1g 5s, 3@2g". Each row is a quantity,
+ * an `x` (or `@`, `*`, `×`) and a price in money notation (a bare number is copper). Rows are separated
+ * by spaces, commas, semicolons or new lines. Anything that is not a row is reported, not guessed.
+ */
+export function parseLevels(text: string): { levels: PriceLevel[]; errors: string[] } {
+  const row = /(\d+)\s*[x×@*]\s*((?:\d+\s*[gsc](?![a-z])\s*)+|\d+(?!\d))/gi;
+  const levels: PriceLevel[] = [];
+  const errors: string[] = [];
+  let last = 0;
+  const leftover = (s: string) => {
+    const junk = s.replace(/[\s,;]+/g, ' ').trim();
+    if (junk) errors.push(`Not a row: "${junk}"`);
+  };
+  for (const m of text.matchAll(row)) {
+    leftover(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    const qty = Number(m[1]);
+    const price = parseMoney(m[2]);
+    if (price === null || qty <= 0) errors.push(`Not a row: "${m[0].trim()}"`);
+    else levels.push({ price, qty });
+  }
+  leftover(text.slice(last));
+  return { levels, errors };
+}
+
+export interface ManualSnapshotInput {
+  itemId: number;
+  ahType: AhType;
+  /** Cheapest price shown, per item. */
+  lowest: Copper;
+  /** Units at the cheapest price; unknown counts as 1. */
+  lowestQty: number | null;
+  /** Units on the AH (the search result's available count). */
+  totalQty: number | null;
+  /** More rows typed in, see `parseLevels`. */
+  more: PriceLevel[];
+  observedAt: number;
+  uid?: string;
+}
+
+/** A snapshot from prices typed in by hand. It is truncated unless its rows add up to the total. */
+export function manualSnapshot(input: ManualSnapshotInput): PriceSnapshot {
+  const levels = normalizeLevels([{ price: input.lowest, qty: Math.max(1, input.lowestQty ?? 1) }, ...input.more]);
+  const units = unitsIn(levels);
+  const totalQty = input.totalQty !== null && input.totalQty > 0 ? Math.max(input.totalQty, units) : null;
+  return {
+    uid: input.uid ?? `manual-${crypto.randomUUID()}`,
+    itemId: input.itemId,
+    observedAt: input.observedAt,
+    ahType: input.ahType,
+    source: 'manual',
+    totalQty,
+    levels,
+    truncated: totalQty === null || units < totalQty,
+  };
 }

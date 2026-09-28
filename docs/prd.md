@@ -72,6 +72,7 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-7.3**: Settings are remembered per item: buy price, sell price, quantity, duration and AH type. Starred items are favorites.
   - **REQ-7.4**: One sortable watchlist table instead of a single form: favorites plus every item a workflow buys or sells on the AH. Columns: last seen low (and when), typical price with the number of snapshots n, buy below, sell at (the saved sell price, else the typical price), margin per item and % of cost when buying at the last low, and relists until break-even. Clicking a row opens the calculator inline.
   - **REQ-7.5**: "Buy below" is the most to pay per item for a target margin on cost (a setting, default 15%) after the AH cut, any deposit spent on sale, and one lost deposit. A last seen low at or under it is highlighted.
+  - **REQ-7.6**: Record AH prices from an expanded row: the lowest price (required), its quantity and the available count from the search result, and optionally more rows typed as `450x58c 900x61c`. Each save is a manual price snapshot (DEC-23) for the row's AH type. The row shows last low, min, typical and n, a chart of the lowest price over time against the typical price and "buy below", and the recent snapshots with delete.
 
 ## Non-functional requirements
 - **NFR-1** (MUST): Single-user personal tool.

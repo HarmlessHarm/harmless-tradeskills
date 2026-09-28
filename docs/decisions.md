@@ -150,3 +150,8 @@
 - **Buy below**: the largest buy price per item that still makes the target margin on cost after the cut, any deposit spent on sale and one lost deposit (one expiry), for the row's quantity and listing mode. Conservative on purpose: manual prices are thin.
 - **Sell at** defaults to the typical price (market based), not cost plus markup.
 - **Deferred**: holdings and average cost columns come with the ledger (#19 step 5); entering snapshots from the page comes in step 4.
+
+## DEC-25: Manual price entry: a few numbers from the search result
+- **Context**: The AH shows hundreds of units per price level. Typing the whole book is not realistic, but a single price hides how deep the cheap end is (#19 step 4).
+- **Chosen**: One required field, the lowest price. Optional: the quantity at that price, the available count (both visible in the search result without opening the item), and more rows in a compact `qty x price` notation. A missing quantity at the lowest price counts as 1. The snapshot is truncated unless its rows add up to the available count; its market value is 'solid' once the rows cover 15% of the available count, otherwise 'partial' and it counts half in the typical price. Unreadable row text blocks saving and is named, never guessed.
+- **Chart**: lowest price per snapshot as dots over time (filled = solid, hollow = partial), with the typical price and "buy below" as labelled reference lines, hover or focus for the numbers; the list under it is the table view.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { marketValue, normalizeLevels, type PriceSnapshot, priceStats, summarize, trimLevels, weightedMedian } from './snapshots';
+import { manualSnapshot, marketValue, normalizeLevels, parseLevels, type PriceSnapshot, priceStats, summarize, trimLevels, weightedMedian } from './snapshots';
 
 /** Linen Cloth as seen on the AH: a deep book, cheap end first, a few silly listings at the top. */
 const linen = [
@@ -147,5 +147,64 @@ describe('weighted median', () => {
     expect(weightedMedian([{ value: 1, weight: 1 }, { value: 9, weight: 1 }])).toBe(5);
     expect(weightedMedian([{ value: 1, weight: 0.5 }, { value: 9, weight: 1 }])).toBe(9);
     expect(weightedMedian([])).toBeNull();
+  });
+});
+
+describe('typed-in rows', () => {
+  it('reads quantity x price rows in money notation', () => {
+    expect(parseLevels('100x56c 450x58c').levels).toEqual([
+      { price: 56, qty: 100 },
+      { price: 58, qty: 450 },
+    ]);
+    expect(parseLevels('20 x 1g 5s, 3@2g\n7*150').levels).toEqual([
+      { price: 10_500, qty: 20 },
+      { price: 20_000, qty: 3 },
+      { price: 150, qty: 7 },
+    ]);
+    // A bare number is copper, also when another row follows.
+    expect(parseLevels('100x56 450x58').levels).toEqual([
+      { price: 56, qty: 100 },
+      { price: 58, qty: 450 },
+    ]);
+    expect(parseLevels('  ')).toEqual({ levels: [], errors: [] });
+  });
+
+  it('reports what it cannot read instead of guessing', () => {
+    const r = parseLevels('56c 450x58c lots');
+    expect(r.levels).toEqual([{ price: 58, qty: 450 }]);
+    expect(r.errors).toEqual(['Not a row: "56c"', 'Not a row: "lots"']);
+  });
+});
+
+describe('manual snapshot', () => {
+  const base = { itemId: 2589, ahType: 'faction' as const, observedAt: 1, uid: 'u' };
+
+  it('needs only the lowest price; its quantity defaults to 1', () => {
+    const s = manualSnapshot({ ...base, lowest: 56, lowestQty: null, totalQty: 3000, more: [] });
+    expect(s).toMatchObject({ source: 'manual', levels: [{ price: 56, qty: 1 }], totalQty: 3000, truncated: true });
+    expect(summarize(s)).toMatchObject({ minPrice: 56, marketValue: 56, confidence: 'partial' });
+  });
+
+  it('adds typed rows and is solid once they cover enough of the total', () => {
+    const s = manualSnapshot({ ...base, lowest: 56, lowestQty: 100, totalQty: 3000, more: [{ price: 58, qty: 450 }] });
+    expect(s.levels).toEqual([
+      { price: 56, qty: 100 },
+      { price: 58, qty: 450 },
+    ]);
+    expect(summarize(s).confidence).toBe('solid');
+  });
+
+  it('is complete when the rows hold every unit, and never claims fewer units than it lists', () => {
+    expect(manualSnapshot({ ...base, lowest: 42000, lowestQty: 1, totalQty: 1, more: [] }).truncated).toBe(false);
+    expect(manualSnapshot({ ...base, lowest: 56, lowestQty: 100, totalQty: 50, more: [] }).totalQty).toBe(100);
+    expect(manualSnapshot({ ...base, lowest: 56, lowestQty: 1, totalQty: null, more: [] }).truncated).toBe(true);
+  });
+
+  it('gets a unique manual uid', () => {
+    const { uid: _, ...noUid } = base;
+    const a = manualSnapshot({ ...noUid, lowest: 1, lowestQty: 1, totalQty: null, more: [] });
+    const b = manualSnapshot({ ...noUid, lowest: 1, lowestQty: 1, totalQty: null, more: [] });
+    expect(a.uid).toMatch(/^manual-/);
+    expect(a.uid).not.toBe(b.uid);
   });
 });

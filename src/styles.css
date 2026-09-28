@@ -1082,12 +1082,231 @@ th.r .sort-btn {
 .panel-actions label.inline {
   margin: 0;
 }
-.quick-calc {
-  padding: 12px 0 2px;
+/* Expanded watchlist row: calculator and prices side by side, stacked on narrow screens. */
+.row-detail {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.1fr);
+  gap: 20px;
+  padding: 12px 0 4px;
   /* Stay in view and wrap to the screen when the table scrolls sideways on narrow screens. */
   position: sticky;
   left: 0;
   max-width: calc(100vw - 110px);
+}
+@media (max-width: 900px) {
+  .row-detail {
+    grid-template-columns: 1fr;
+  }
+}
+.quick-calc,
+.prices-card {
+  min-width: 0;
+}
+.prices-card {
+  border-left: 1px solid var(--line);
+  padding-left: 20px;
+}
+@media (max-width: 900px) {
+  .prices-card {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+}
+.prices-card h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.record-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.record-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.record-form label > * {
+  color: var(--text);
+}
+.record-form label.grow {
+  flex: 1 1 160px;
+}
+.record-form .money-input {
+  width: 96px;
+}
+.record-form .num-input {
+  width: 72px;
+}
+.record-hint {
+  margin: 6px 0 10px;
+}
+.obs-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.obs-stats > div {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.obs-stats dt {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.obs-stats dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.obs-stats .thin {
+  border-color: #5a4a1f;
+  background: rgba(240, 182, 74, 0.08);
+}
+.obs-stats .thin dd {
+  color: var(--warn);
+}
+
+/* Price chart. Marks use the validated chart hues; all text stays in text tokens. */
+.price-chart {
+  position: relative;
+  margin: 4px 0 6px;
+  --chart-surface: #1c212a;
+  --chart-price: #4a8fe0;
+  --chart-buy: #b88a1c;
+}
+.price-chart svg {
+  display: block;
+  overflow: visible;
+}
+.price-chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.price-chart .axis {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.price-chart .ref-typical line {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.price-chart .ref-buy line {
+  stroke: var(--chart-buy);
+  stroke-width: 1.5;
+}
+.price-chart .dot {
+  stroke: var(--chart-surface);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+.price-chart .dot.solid {
+  fill: var(--chart-price);
+}
+.price-chart .dot.partial {
+  fill: var(--chart-surface);
+  stroke: var(--chart-price);
+  stroke-width: 2;
+}
+.price-chart .hit {
+  fill: transparent;
+  cursor: default;
+  outline: none;
+}
+.price-chart .hit:focus-visible {
+  stroke: var(--gold);
+  stroke-width: 1;
+}
+.chart-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 140px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.chart-tip strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.chart-key {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.key-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--chart-price);
+}
+.key-dot.solid {
+  background: var(--chart-price);
+}
+.key-dot.partial {
+  margin-left: 8px;
+}
+.obs-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.editor-row .panel .obs-list th,
+.obs-list th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.obs-list th.r {
+  text-align: right;
+}
+.obs-list td {
+  padding: 3px 6px;
+  border-bottom: 1px solid rgba(44, 52, 65, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.obs-list .row-icon {
+  width: 22px;
+  height: 22px;
+}
+.prices-card .hint {
+  margin-top: 8px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .calc-inputs {
   display: flex;
@@ -1151,4 +1370,16 @@ th.r .sort-btn {
 }
 .calc-kv dd {
   margin: 0;
+}
+@media (max-width: 600px) {
+  /* Let long values wrap under their label instead of squeezing into a narrow column. */
+  .calc-kv {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+  .calc-kv dd {
+    text-align: right;
+  }
+}
+.obs-list td:first-child {
+  white-space: nowrap;
 }

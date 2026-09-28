@@ -5,6 +5,7 @@ import { formatMoney } from '../engine/money';
 import { type PriceSnapshot, type PriceStats, priceStats } from '../engine/snapshots';
 import type { AhType, Config, FlipFavorite, Item } from '../engine/types';
 import { useStore } from '../state/store';
+import { PricesCard } from './FlipPrices';
 import { ago, ItemName, ItemPicker, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
@@ -15,11 +16,13 @@ type SortKey = 'name' | 'last' | 'typical' | 'n' | 'buyBelow' | 'sellAt' | 'marg
 /** Fewer snapshots than this and the typical price is a guess. */
 const THIN_DATA = 5;
 
-interface Row {
+export interface Row {
   watch: WatchItem;
   item: Item | undefined;
   name: string;
   settings: Settings;
+  /** Snapshots for the row's AH type, oldest first. */
+  snaps: PriceSnapshot[];
   stats: PriceStats;
   row: WatchRow;
 }
@@ -48,8 +51,9 @@ export function FlipPage() {
       watchlistItems(engine, workflows, flipFavorites).map((watch) => {
         const item = engine.items.get(watch.itemId);
         const settings = rowSettings(config, watch.itemId, flipFavorites.find((f) => f.itemId === watch.itemId));
-        const stats = priceStats((snapsByItem.get(watch.itemId) ?? []).filter((s) => s.ahType === settings.ahType));
-        return { watch, item, name: item?.name ?? `#${watch.itemId}`, settings, stats, row: watchRow(config, item, settings, stats, margin) };
+        const snaps = (snapsByItem.get(watch.itemId) ?? []).filter((s) => s.ahType === settings.ahType);
+        const stats = priceStats(snaps);
+        return { watch, item, name: item?.name ?? `#${watch.itemId}`, settings, snaps, stats, row: watchRow(config, item, settings, stats, margin) };
       }),
     [engine, workflows, flipFavorites, snapsByItem, config, margin],
   );
@@ -202,7 +206,10 @@ export function FlipPage() {
                       {isOpen && (
                         <tr className="editor-row">
                           <td colSpan={9}>
-                            <QuickCalc r={r} config={config} targetMargin={margin} onChange={(patch) => save(r.watch.itemId, patch)} />
+                            <div className="row-detail">
+                              <QuickCalc r={r} config={config} targetMargin={margin} onChange={(patch) => save(r.watch.itemId, patch)} />
+                              <PricesCard r={r} />
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -330,7 +337,6 @@ function QuickCalc({ r, config, targetMargin, onChange }: { r: Row; config: Conf
       ) : (
         <p className="muted small">{sell === null ? 'Enter a sell price: there is no typical price for this item yet.' : 'Enter the price you see on the AH.'}</p>
       )}
-      {row.n === 0 && <p className="muted small">No AH price snapshots for this item yet, so last low and typical price are empty.</p>}
     </div>
   );
 }
