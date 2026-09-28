@@ -2,10 +2,10 @@ import type { Database, SqlValue } from 'sql.js';
 import { withDefaults } from '../config';
 import type {
   Config,
+  Copper,
   DisenchantRule,
   FlipFavorite,
   ItemRecord,
-  PriceObservation,
   RecipeRecord,
   Workflow,
 } from '../engine/types';
@@ -269,27 +269,52 @@ export class Repo {
 
   // Prices ------------------------------------------------------------------
 
-  /** Latest observation per item. */
-  latestPrices(): PriceObservation[] {
-    return this.all(
-      'user',
-      `SELECT p.* FROM price_observations p
-       JOIN (SELECT item_id, MAX(id) AS id FROM price_observations GROUP BY item_id) latest ON latest.id = p.id`,
-    ).map((r) => ({
-      itemId: Number(r.item_id),
-      ahPrice: num(r.ah_price),
-      ahMin: num(r.ah_min),
-      observedAt: Number(r.observed_at),
-    }));
+  /** Min AH prices you set per item: the worst-case sell price (REQ-4.2). */
+  listAhMins(): Map<number, Copper> {
+    return new Map(this.all('user', 'SELECT item_id, price FROM ah_min_prices').map((r) => [Number(r.item_id), Number(r.price)]));
   }
 
-  addPrice(obs: PriceObservation): void {
-    this.run('user', 'INSERT INTO price_observations (item_id, ah_price, ah_min, observed_at) VALUES (?,?,?,?)', [
-      obs.itemId,
-      obs.ahPrice,
-      obs.ahMin,
-      obs.observedAt,
-    ]);
+  /** Set, or clear with null, an item's min AH price. */
+  setAhMin(itemId: number, price: Copper | null): void {
+    if (price === null) this.run('user', 'DELETE FROM ah_min_prices WHERE item_id = ?', [itemId]);
+    else
+      this.run(
+        'user',
+        `INSERT INTO ah_min_prices (item_id, price, updated_at) VALUES (?,?,?)
+         ON CONFLICT(item_id) DO UPDATE SET price=excluded.price, updated_at=excluded.updated_at`,
+        [itemId, price, Date.now()],
+      );
+  }
+
+  /**
+   * Moves AH prices from the old per-item price table of the personal database into price snapshots
+   * (DEC-27), then drops that table. Each becomes a one-row manual snapshot on the faction AH. Safe to
+   * run again: the uid skips snapshots already moved, and without the table there is nothing to do.
+   * Returns how many prices were moved.
+   */
+  moveLegacyPrices(): number {
+    const exists = this.all('user', `SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'price_observations'`).length > 0;
+    if (!exists) return 0;
+    let moved = 0;
+    for (const r of this.all('user', 'SELECT item_id, ah_price, observed_at FROM price_observations WHERE ah_price IS NOT NULL ORDER BY id')) {
+      const itemId = Number(r.item_id);
+      const price = Number(r.ah_price);
+      const observedAt = Number(r.observed_at);
+      const added = this.addSnapshot({
+        uid: `legacy-${itemId}-${observedAt}-${price}`,
+        itemId,
+        observedAt,
+        ahType: 'faction',
+        source: 'manual',
+        totalQty: null,
+        levels: [{ price, qty: 1 }],
+        truncated: true,
+      });
+      if (added) moved++;
+    }
+    this.user.exec('DROP TABLE price_observations');
+    this.onChange('user');
+    return moved;
   }
 
   // Price snapshots (prices database, DEC-23) -------------------------------

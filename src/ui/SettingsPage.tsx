@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../config';
 import type { DbKind } from '../db/repo';
-import type { AhDuration, Config, ItemClass } from '../engine/types';
+import type { AhDuration, AhPriceRule, Config, ItemClass } from '../engine/types';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
@@ -11,8 +11,8 @@ const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal', 
 const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
 const KIND_CONTENTS: Record<DbKind, string> = {
   data: 'items, recipes, disenchant rules',
-  user: 'workflows, workflow prices, flip favorites, settings',
-  prices: 'AH price snapshots',
+  user: 'workflows, flip favorites and ledger, min AH prices, settings',
+  prices: 'AH price snapshots for workflows, items and flips',
 };
 
 /** "a", "a and b", "a, b and c". */
@@ -36,7 +36,7 @@ const AH_DEFAULTS: Partial<Config> = {
 };
 
 const SECTIONS = [
-  { key: 'general', label: 'General', sub: 'Auction house, time', Section: GeneralSettings },
+  { key: 'general', label: 'General', sub: 'Auction house, prices, time', Section: GeneralSettings },
   { key: 'data', label: 'Data', sub: 'Wowhead, backups', Section: DataSettings },
   { key: 'disenchant', label: 'Disenchant rules', sub: 'Seeded, rarely edited', Section: DisenchantPage },
 ] as const;
@@ -175,6 +175,24 @@ function GeneralSettings() {
         </p>
       </Panel>
 
+      <Panel title="AH prices">
+        <div className="inline-field">
+          <span>Workflows and items use</span>
+          <Segmented<AhPriceRule>
+            value={config.ahPriceRule}
+            options={[
+              { value: 'latest', label: 'Latest price' },
+              { value: 'typical', label: 'Typical price' },
+            ]}
+            onChange={(v) => save({ ahPriceRule: v })}
+          />
+        </div>
+        <p className="small muted">
+          Every AH price you record is a price snapshot, per faction or neutral AH. <b>Latest</b> uses the newest one (its market value): what you just saw.{' '}
+          <b>Typical</b> uses the typical price over all of them, so one odd low or high does not swing a workflow. The min AH price stays a number you set.
+        </p>
+      </Panel>
+
       <Panel title="Time and simulation">
         <div className="form-grid">
           <label>
@@ -262,8 +280,8 @@ function DataSettings() {
       <Panel title="Your data">
         <p className="small muted">
           Everything is stored in this browser as three SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
-          can be shared with other players. <b>AH prices</b> (price snapshots for flipping) can be shared with players on your
-          realm. <b>Personal data</b> (workflows, workflow prices, flip favorites, settings) is yours. Export all three for backups
+          can be shared with other players. <b>AH prices</b> (every AH price you record, as snapshots) can be shared with players on your
+          realm. <b>Personal data</b> (workflows, flip favorites and ledger, min AH prices, settings) is yours. Export all three for backups
           or to move to another machine. Importing a file replaces only the data it holds.
         </p>
         <div className="add-row">

@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react';
 import { anyItem } from '../engine/disenchant';
 import { formatMoney, parseMoney, splitMoney } from '../engine/money';
-import type { Copper, Item, PriceObservation } from '../engine/types';
+import type { Copper, Item } from '../engine/types';
 import { useStore } from '../state/store';
 import { importItem } from '../state/importer';
 import { iconUrl, wowheadUrl } from '../wowhead/adapter';
@@ -357,13 +357,16 @@ export function ago(ts: number | null | undefined): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-/** Price age with a warning colour once it is a day old. */
-export function PriceAge({ obs }: { obs: PriceObservation | undefined }) {
-  if (!obs) return <span className="muted">no price</span>;
-  const old = Date.now() - obs.observedAt > 86_400_000;
+/** Price age with a warning colour once it is a day old; n is how many snapshots are behind the price. */
+export function PriceAge({ observedAt, n }: { observedAt: number | undefined; n?: number }) {
+  if (observedAt === undefined) return <span className="muted">no price</span>;
+  const old = Date.now() - observedAt > 86_400_000;
   return (
-    <span className={old ? 'stale' : 'muted'} title={new Date(obs.observedAt).toLocaleString()}>
-      {ago(obs.observedAt)}
+    <span
+      className={old ? 'stale' : 'muted'}
+      title={`${new Date(observedAt).toLocaleString()}${n !== undefined ? ` · ${n} price snapshot${n === 1 ? '' : 's'}` : ''}`}
+    >
+      {ago(observedAt)}
     </span>
   );
 }

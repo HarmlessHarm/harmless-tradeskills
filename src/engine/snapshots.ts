@@ -1,5 +1,5 @@
 import { parseMoney } from './money';
-import type { AhType, Copper } from './types';
+import type { AhPrice, AhPriceRule, AhType, Copper } from './types';
 
 /**
  * AH price snapshots (DEC-23). A snapshot is the cheap end of the order book for one item at one
@@ -244,4 +244,28 @@ export function manualSnapshot(input: ManualSnapshotInput): PriceSnapshot {
     levels,
     truncated: totalQty === null || units < totalQty,
   };
+}
+
+/**
+ * One AH price per item and AH type for workflows and the Items page (DEC-27). 'latest': the newest
+ * snapshot's market value (its lowest price when there is none). 'typical': the typical price over
+ * all snapshots (`priceStats`), falling back to 'latest'.
+ */
+export function currentAhPrices(snapshots: PriceSnapshot[], rule: AhPriceRule): AhPrice[] {
+  const groups = new Map<string, PriceSnapshot[]>();
+  for (const s of snapshots) {
+    const key = `${s.itemId}:${s.ahType}`;
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  const out: AhPrice[] = [];
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => a.observedAt - b.observedAt);
+    const newest = sorted[sorted.length - 1];
+    const sum = summarize(newest);
+    const latest = sum.marketValue ?? sum.minPrice;
+    const price = rule === 'typical' ? (priceStats(sorted).typical ?? latest) : latest;
+    if (price === null) continue;
+    out.push({ itemId: newest.itemId, ahType: newest.ahType, price, observedAt: newest.observedAt, n: sorted.length });
+  }
+  return out;
 }

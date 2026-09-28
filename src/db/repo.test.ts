@@ -46,7 +46,11 @@ describe('repo', () => {
   it('drops old pessimistic prices when upgrading to min AH prices', async () => {
     const SQL = await initSqlJs();
     const insert = 'INSERT INTO price_observations (item_id, ah_price, ah_pessimistic, observed_at) VALUES (1, 10, 8, 1)';
-    const expected = [{ itemId: 1, ahPrice: 10, ahMin: null, observedAt: 1 }];
+    const check = (repo: Repo) => {
+      expect(repo.moveLegacyPrices()).toBe(1);
+      expect(repo.listSnapshots().map((s) => [s.itemId, s.levels, s.observedAt])).toEqual([[1, [{ price: 10, qty: 1 }], 1]]);
+      expect(repo.listAhMins()).toEqual(new Map());
+    };
 
     // A user database from before the rename.
     const user = new SQL.Database();
@@ -55,8 +59,7 @@ describe('repo', () => {
     user.exec('PRAGMA user_version = 1');
     user.exec(insert);
     migrate(user, 'user');
-    const fresh = await freshRepo();
-    expect(new Repo({ data: fresh.data, user, prices: fresh.prices }).latestPrices()).toEqual(expected);
+    check(new Repo({ data: (await freshRepo()).data, user, prices: (await freshRepo()).prices }));
 
     // A legacy combined file, e.g. an old export.
     const legacy = new SQL.Database();
@@ -64,7 +67,7 @@ describe('repo', () => {
     legacy.exec(`PRAGMA user_version = ${LEGACY_MIGRATIONS.length}`);
     legacy.exec(insert);
     const split = splitLegacy(legacy, (b) => new SQL.Database(b));
-    expect(new Repo({ ...split, prices: fresh.prices }).latestPrices()).toEqual(expected);
+    check(new Repo({ ...split, prices: (await freshRepo()).prices }));
   });
 
   it('round trips items with overrides', async () => {
@@ -84,16 +87,51 @@ describe('repo', () => {
     expect(repo.listItems()).toEqual([{ ...rec, updatedAt: 3 }]);
   });
 
-  it('keeps price history and returns the latest', async () => {
-    const repo = await freshRepo();
-    repo.addPrice({ itemId: 1, ahPrice: 10, ahMin: null, observedAt: 1 });
-    repo.addPrice({ itemId: 1, ahPrice: 12, ahMin: 8, observedAt: 2 });
-    repo.addPrice({ itemId: 2, ahPrice: 5, ahMin: null, observedAt: 1 });
-    const latest = repo.latestPrices().sort((a, b) => a.itemId - b.itemId);
-    expect(latest).toEqual([
-      { itemId: 1, ahPrice: 12, ahMin: 8, observedAt: 2 },
-      { itemId: 2, ahPrice: 5, ahMin: null, observedAt: 1 },
+  it('moves old AH prices into snapshots and keeps the latest min AH price (DEC-27)', async () => {
+    const SQL = await initSqlJs();
+    // A personal database from before snapshots: every migration up to the move.
+    const user = new SQL.Database();
+    user.exec(`PRAGMA application_id = ${APPLICATION_ID.user}`);
+    const before = USER_MIGRATIONS.length - 1;
+    USER_MIGRATIONS.slice(0, before).forEach((m) => user.exec(m));
+    user.exec(`PRAGMA user_version = ${before}`);
+    user.exec(`INSERT INTO price_observations (item_id, ah_price, ah_min, observed_at) VALUES
+      (1, 10, NULL, 1), (1, 12, 8, 2), (2, 5, NULL, 1), (3, NULL, 4, 3)`);
+    migrate(user, 'user');
+
+    const prices = (await freshRepo()).prices;
+    const changed: string[] = [];
+    const repo = new Repo({ data: (await freshRepo()).data, user, prices }, (k) => changed.push(k));
+    expect(repo.listAhMins()).toEqual(new Map([[1, 8], [3, 4]]));
+    expect(repo.moveLegacyPrices()).toBe(3);
+    expect(repo.listSnapshots().map((s) => [s.itemId, s.levels[0].price, s.observedAt, s.source, s.ahType])).toEqual([
+      [1, 10, 1, 'manual', 'faction'],
+      [2, 5, 1, 'manual', 'faction'],
+      [1, 12, 2, 'manual', 'faction'],
     ]);
+    expect(user.exec(`SELECT name FROM sqlite_master WHERE name = 'price_observations'`)).toEqual([]);
+    expect(changed).toContain('prices');
+    expect(changed).toContain('user');
+    // Nothing left to move; and moving the same old prices into a prices file that has them adds none.
+    expect(repo.moveLegacyPrices()).toBe(0);
+    const again = new SQL.Database();
+    again.exec(`PRAGMA application_id = ${APPLICATION_ID.user}`);
+    USER_MIGRATIONS.slice(0, before).forEach((m) => again.exec(m));
+    again.exec(`PRAGMA user_version = ${before}`);
+    again.exec(`INSERT INTO price_observations (item_id, ah_price, ah_min, observed_at) VALUES (1, 10, NULL, 1)`);
+    migrate(again, 'user');
+    expect(new Repo({ data: repo.data, user: again, prices }).moveLegacyPrices()).toBe(0);
+    expect(repo.listSnapshots()).toHaveLength(3);
+  });
+
+  it('sets and clears min AH prices', async () => {
+    const repo = await freshRepo();
+    repo.setAhMin(1, 500);
+    repo.setAhMin(1, 450);
+    repo.setAhMin(2, 90);
+    expect(repo.listAhMins()).toEqual(new Map([[1, 450], [2, 90]]));
+    repo.setAhMin(1, null);
+    expect(repo.listAhMins()).toEqual(new Map([[2, 90]]));
   });
 
   it('saves and updates workflows', async () => {
@@ -120,7 +158,7 @@ describe('repo', () => {
   it('calls onChange with the database that changed', async () => {
     const changed: string[] = [];
     const repo = await freshRepo((kind) => changed.push(kind));
-    repo.addPrice({ itemId: 1, ahPrice: 1, ahMin: null, observedAt: 1 });
+    repo.setAhMin(1, 1);
     repo.deleteItem(1);
     expect(changed).toEqual(['user', 'data']);
   });
@@ -223,7 +261,7 @@ describe('split databases', () => {
     const repo = await freshRepo();
     const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();
     expect(tables(repo.data)).toEqual(['de_rules', 'items', 'recipes']);
-    expect(tables(repo.user)).toEqual(['flip_transactions', 'price_observations', 'settings', 'workflows']);
+    expect(tables(repo.user)).toEqual(['ah_min_prices', 'flip_transactions', 'settings', 'workflows']);
     expect(tables(repo.prices)).toEqual(['price_snapshots']);
     expect(dbKind(repo.data)).toBe('data');
     expect(dbKind(repo.user)).toBe('user');
@@ -253,7 +291,8 @@ describe('split databases', () => {
     expect(repo.listDeRules()).toHaveLength(48);
     expect(repo.listWorkflows().map((w) => [w.name, w.targetGoldPerHour])).toEqual([['Shuffle', 5000]]);
     expect(repo.listFlipFavorites()).toEqual([{ itemId: 4306 }]);
-    expect(repo.latestPrices().map((p) => p.ahPrice)).toEqual([100]);
+    repo.moveLegacyPrices();
+    expect(repo.listSnapshots().map((s) => s.levels[0].price)).toEqual([100]);
     expect(data.exec(`SELECT name FROM sqlite_master WHERE name = 'workflows'`)).toEqual([]);
     expect(user.exec(`SELECT name FROM sqlite_master WHERE name = 'items'`)).toEqual([]);
 

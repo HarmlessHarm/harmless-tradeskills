@@ -1533,3 +1533,9 @@ th.r .sort-btn {
 .ledger-card .obs-stats {
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
 }
+.inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { anyItemId, findDisenchantRule } from '../engine/disenchant';
-import { QUALITY_NAMES, type Item, type Quality, type Recipe, type Workflow, type WorkflowStep } from '../engine/types';
+import { QUALITY_NAMES, type AhType, type Item, type Quality, type Recipe, type Workflow, type WorkflowStep } from '../engine/types';
 import {
   analyzeWorkflow,
   describeStep,
@@ -16,7 +16,7 @@ import {
 import { importItem, importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { Combo, errorText, fmtQty, formatDuration, ItemIcon, ItemName, Money, MoneyInput, NumberInput, Panel, Segmented } from './common';
-import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
+import { AhMinCell, AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 import { searchRecipes } from './recipeSearch';
 
 /** Coarse Thread, Maple Seed, Empty Vial, Simple Wood come from a vendor. */
@@ -324,6 +324,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
               <BuySection
                 key={source}
                 source={source}
+                ahType={wf.ahType}
                 inputs={analysis.externalInputs.filter((x) => x.source === source)}
                 onMove={(itemId) => save({ buyMap: { ...wf.buyMap, [itemId]: source === 'ah' ? 'vendor' : 'ah' } })}
                 onMake={(itemId, recipeId) => save({ steps: insertBeforeConsumer(engine, wf.steps, itemId, { type: 'recipe', recipeId }) })}
@@ -362,9 +363,9 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
                     <td>
                       {x.disposition === 'ah' ? (
                         <div className="price-cell">
-                          <AhPriceCell itemId={x.itemId} />
-                          <AhPriceCell itemId={x.itemId} min />
-                          <AhPriceAge itemId={x.itemId} />
+                          <AhPriceCell itemId={x.itemId} ahType={wf.ahType} />
+                          <AhMinCell itemId={x.itemId} />
+                          <AhPriceAge itemId={x.itemId} ahType={wf.ahType} />
                         </div>
                       ) : x.disposition === 'vendor' ? (
                         <Money value={engine.items.get(x.itemId)?.vendorSell ?? null} />
@@ -394,11 +395,14 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
 
 function BuySection({
   source,
+  ahType,
   inputs,
   onMove,
   onMake,
 }: {
   source: 'ah' | 'vendor';
+  /** The workflow's AH: prices are per AH (DEC-27). */
+  ahType: AhType;
   inputs: ExternalInput[];
   onMove: (itemId: number) => void;
   onMake: (itemId: number, recipeId: string) => void;
@@ -439,8 +443,8 @@ function BuySection({
                 <td>
                   {source === 'ah' ? (
                     <div className="price-cell">
-                      <AhPriceCell itemId={x.itemId} />
-                      <AhPriceAge itemId={x.itemId} />
+                      <AhPriceCell itemId={x.itemId} ahType={ahType} />
+                      <AhPriceAge itemId={x.itemId} ahType={ahType} />
                     </div>
                   ) : (
                     <VendorBuyCell itemId={x.itemId} />

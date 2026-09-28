@@ -6,7 +6,7 @@
  * Data is split over three database files so game data and prices can be shared without personal
  * data (DEC-21, DEC-23):
  * - data: items, recipes and disenchant rules. Shareable with other players.
- * - user: workflows, flip favorites, the flip ledger, price observations and settings.
+ * - user: workflows, flip favorites, the flip ledger, min AH prices and settings.
  * - prices: AH price snapshots. Shareable with other players on the same realm.
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
@@ -99,6 +99,18 @@ export const USER_MIGRATIONS: string[] = [
     note TEXT NOT NULL DEFAULT ''
   );
   CREATE INDEX flip_tx_item ON flip_transactions (item_id, occurred_at);`,
+  // AH prices move to price snapshots in the prices database (DEC-27). The min AH price is a
+  // worst-case assumption, not an observation, so it stays here: the latest one per item.
+  // price_observations itself is emptied into snapshots and dropped by Repo.moveLegacyPrices.
+  `CREATE TABLE ah_min_prices (
+    item_id INTEGER PRIMARY KEY,
+    price INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  INSERT INTO ah_min_prices (item_id, price, updated_at)
+    SELECT p.item_id, p.ah_min, p.observed_at FROM price_observations p
+    JOIN (SELECT item_id, MAX(id) AS id FROM price_observations GROUP BY item_id) latest ON latest.id = p.id
+    WHERE p.ah_min IS NOT NULL;`,
 ];
 
 /**

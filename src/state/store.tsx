@@ -3,16 +3,18 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } from '../db/browser';
 import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
-import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
+import type { Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
 import type { Transaction } from '../engine/ledger';
-import type { PriceSnapshot } from '../engine/snapshots';
+import { ahKey } from '../engine/prices';
+import { currentAhPrices, type PriceSnapshot } from '../engine/snapshots';
 import type { EngineData } from '../engine/workflow';
 
 export interface Snapshot {
   itemRecords: ItemRecord[];
   recipeRecords: RecipeRecord[];
   deRules: DisenchantRule[];
-  prices: PriceObservation[];
+  /** Min AH prices you set per item (REQ-4.2). */
+  ahMins: Map<number, Copper>;
   workflows: Workflow[];
   config: Config;
   flipFavorites: FlipFavorite[];
@@ -43,7 +45,7 @@ function readSnapshot(repo: Repo): Snapshot {
     itemRecords: repo.listItems(),
     recipeRecords: repo.listRecipes(),
     deRules: repo.listDeRules(),
-    prices: repo.latestPrices(),
+    ahMins: repo.listAhMins(),
     workflows: repo.listWorkflows(),
     config: repo.getConfig(),
     flipFavorites: repo.listFlipFavorites(),
@@ -72,6 +74,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (dbs: Dbs) => {
       dbsRef.current = dbs;
       const r = new Repo(dbs, (kind) => savers[kind].schedule());
+      // Old personal data (a first load after the update, or an imported old export) still has AH
+      // prices in its own table: move them into price snapshots (DEC-27).
+      r.moveLegacyPrices();
       setRepo(r);
       setSnap(readSnapshot(r));
     },
@@ -110,7 +115,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const engine: EngineData = {
       items: new Map(snap.itemRecords.map((r) => [r.id, effectiveItem(r)])),
       recipes: new Map(snap.recipeRecords.map((r) => [r.id, effectiveRecipe(r)])),
-      prices: new Map(snap.prices.map((p) => [p.itemId, p])),
+      ahPrices: new Map(currentAhPrices(snap.priceSnapshots, snap.config.ahPriceRule).map((p) => [ahKey(p.itemId, p.ahType), p])),
+      ahMins: snap.ahMins,
       deRules: snap.deRules,
       config: snap.config,
     };

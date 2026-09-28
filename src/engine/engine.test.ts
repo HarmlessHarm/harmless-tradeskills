@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, withDefaults } from '../config';
-import { deShuffle, engineData, IDS } from '../test/fixtures';
+import { deShuffle, engineData, IDS, setAhPrice } from '../test/fixtures';
 import { deposit, flip, listingMode, netOnSale, postingDeposit } from './ah';
+import { price } from './prices';
 import type { Config } from './types';
 import { anyItem, anyItemId, deriveDisenchantRecipe, findDisenchantRule } from './disenchant';
 import { formatMoney, parseMoney } from './money';
@@ -166,7 +167,7 @@ describe('workflow: DE shuffle', () => {
     expect(a.batchInvestment).toBe(80 * 15 + 20 * 10 + 24 * 90 + 24 * 4 + 3 * 38);
     expect(a.batchDeposits).toBe(0);
     const d = engineData();
-    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahMin: null, observedAt: 0 });
+    setAhPrice(d, IDS.oil, 1000);
     const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
     // Oil is not gear, so the 24 oils go up as one lot with one deposit.
     expect(r.batchDeposits).toBe(deposit(d.config, 400, 24, '8h', 'faction'));
@@ -193,16 +194,36 @@ describe('workflow: DE shuffle', () => {
     expect(analyzeWorkflow(data, deShuffle).simulation).toEqual(a.simulation);
   });
 
+  it('falls back to the AH price for the worst case, and prices by AH type', () => {
+    const d = engineData();
+    expect(price(d, IDS.linen, 'ah-min')).toBe(15);
+    d.ahMins.set(IDS.linen, 10);
+    expect(price(d, IDS.linen, 'ah-min')).toBe(10);
+    expect(price(d, IDS.linen, 'ah', 'neutral')).toBeNull();
+    // The min AH price is yours, not per AH: it applies to a neutral price too.
+    setAhPrice(d, IDS.linen, 25, null, 'neutral');
+    expect(price(d, IDS.linen, 'ah-min', 'neutral')).toBe(10);
+  });
+
   it('uses min AH prices for the worst case', () => {
     const d = engineData();
-    d.prices.set(IDS.oil, { itemId: IDS.oil, ahPrice: 1000, ahMin: 500, observedAt: 0 });
+    setAhPrice(d, IDS.oil, 1000, 500);
     const r = analyzeWorkflow(d, { ...deShuffle, sellMap: { [IDS.oil]: 'ah' } });
     expect(r.simulation!.worstCase).toBeLessThan(r.simulation!.p5);
   });
 
+  it('prices each workflow on its own AH', () => {
+    const d = engineData();
+    setAhPrice(d, IDS.linen, 25, null, 'neutral');
+    // The faction price (15c) is unchanged; a neutral workflow uses the neutral one.
+    expect(analyzeWorkflow(d, deShuffle).profitPerUnit).toBeCloseTo(a.profitPerUnit);
+    const neutral = analyzeWorkflow(d, { ...deShuffle, ahType: 'neutral' });
+    expect(neutral.externalInputs.find((x) => x.itemId === IDS.linen)!.unitPrice).toBe(25);
+  });
+
   it('updates immediately when a price changes', () => {
     const d = engineData();
-    d.prices.set(IDS.linen, { itemId: IDS.linen, ahPrice: 25, ahMin: null, observedAt: 1 });
+    setAhPrice(d, IDS.linen, 25);
     expect(analyzeWorkflow(d, deShuffle).profitPerUnit).toBeCloseTo(a.profitPerUnit - 40);
   });
 
@@ -221,7 +242,7 @@ describe('workflow: DE shuffle', () => {
   });
 
   it('reports missing prices', () => {
-    const d = engineData({ prices: new Map() });
+    const d = engineData({ ahPrices: new Map() });
     const r = analyzeWorkflow(d, deShuffle);
     expect(r.missingPrices).toContainEqual({ itemId: IDS.linen, what: 'ah price' });
   });

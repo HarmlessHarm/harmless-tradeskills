@@ -1,19 +1,10 @@
 import type { Repo } from '../db/repo';
-import type { Copper, ItemFields, ItemRecord, PriceObservation, RecipeRecord } from '../engine/types';
+import { manualSnapshot } from '../engine/snapshots';
+import type { AhType, Copper, ItemFields, ItemRecord, RecipeRecord } from '../engine/types';
 
-/** Record a new AH price observation, keeping the other field of the latest one. */
-export function setAhPrice(
-  repo: Repo,
-  latest: PriceObservation | undefined,
-  itemId: number,
-  patch: { ahPrice?: Copper | null; ahMin?: Copper | null },
-): void {
-  repo.addPrice({
-    itemId,
-    ahPrice: patch.ahPrice !== undefined ? patch.ahPrice : (latest?.ahPrice ?? null),
-    ahMin: patch.ahMin !== undefined ? patch.ahMin : (latest?.ahMin ?? null),
-    observedAt: Date.now(),
-  });
+/** Record an AH price typed in a price cell: a manual price snapshot of one row (REQ-4.1, DEC-27). */
+export function recordAhPrice(repo: Repo, itemId: number, ahType: AhType, price: Copper): void {
+  repo.addSnapshot(manualSnapshot({ itemId, ahType, lowest: price, lowestQty: null, totalQty: null, more: [], observedAt: Date.now() }));
 }
 
 export function setVendorBuy(repo: Repo, record: ItemRecord, vendorBuy: Copper | null): void {

@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG: Config = {
   ahRulesVerifiedAt: null,
   flipTargetMargin: 0.15,
   ledgerCostMethod: 'average',
+  ahPriceRule: 'latest',
   perActionOverheadSec: 1,
   perBatchOverheadSec: 120,
   defaultBatchSize: 20,

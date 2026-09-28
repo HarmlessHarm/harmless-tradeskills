@@ -14,7 +14,8 @@ import { useEditSession } from './useEditSession';
 import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 
 type ItemSortKey = 'name' | 'ilvl' | 'type' | 'vendorSell' | 'ah';
-import { AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
+import { ahKey } from '../engine/prices';
+import { AhMinCell, AhPriceAge, AhPriceCell, VendorBuyCell } from './PriceCells';
 
 export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
   const { mutateAsync } = useStore();
@@ -61,7 +62,7 @@ export function ImportBox({ defaultType }: { defaultType: 'item' | 'spell' }) {
 }
 
 export function ItemsPage() {
-  const { itemRecords, mutate, engine, workflows, deRules, prices } = useStore();
+  const { itemRecords, mutate, engine, workflows, deRules } = useStore();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | ItemClass>('all');
   const sort = useSort<ItemSortKey>('name');
@@ -73,7 +74,6 @@ export function ItemsPage() {
   const [bulk, setBulk] = useState<'items' | 'vendor' | null>(null);
 
   const q = search.trim().toLowerCase();
-  const ahPrice = new Map(prices.map((p) => [p.itemId, p.ahPrice]));
   const filtered = itemRecords
     .map((r) => ({ r, it: effectiveItem(r) }))
     .filter(({ it }) => !q || it.name.toLowerCase().includes(q) || String(it.id) === q.replace(/^#/, ''))
@@ -92,7 +92,7 @@ export function ItemsPage() {
         case 'vendorSell':
           return it.vendorSell;
         case 'ah':
-          return ahPrice.get(it.id);
+          return engine.ahPrices.get(ahKey(it.id, 'faction'))?.price;
       }
     },
     ({ it }) => it.name,
@@ -178,7 +178,7 @@ export function ItemsPage() {
                 <SortHeader label="Type" k="type" sort={sort} />
                 <SortHeader label="Vendor sell" k="vendorSell" sort={sort} />
                 <th>Vendor buy</th>
-                <SortHeader label="AH price" k="ah" sort={sort} />
+                <SortHeader label="AH price (faction)" k="ah" sort={sort} />
                 <th>Min AH price</th>
                 <th>Price age</th>
                 <th>Source</th>
@@ -211,7 +211,7 @@ export function ItemsPage() {
                     <AhPriceCell itemId={r.id} />
                   </td>
                   <td>
-                    <AhPriceCell itemId={r.id} min />
+                    <AhMinCell itemId={r.id} />
                   </td>
                   <td className="small">
                     <AhPriceAge itemId={r.id} />

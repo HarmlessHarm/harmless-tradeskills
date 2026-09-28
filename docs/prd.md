@@ -49,8 +49,8 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-3.1**: Manually maintained rule table keyed on quality, item level range and armor vs weapon, mapping to outputs with chance and min/max quantity.
   - **REQ-3.2**: A disenchant recipe is derived for any item matching a rule, so a workflow step can be "disenchant item X".
 - **REQ-4** (MUST): Prices.
-  - **REQ-4.1**: Manual price entry per item for AH price, with timestamp so staleness is visible. Vendor buy/sell prices come from REQ-1.
-  - **REQ-4.2** (SHOULD): Optional min AH price per item, used for worst-case figures. [ref: DEC-10]
+  - **REQ-4.1**: AH prices are price snapshots per item and AH (faction or neutral), recorded by hand from the Items page, a workflow or the flip watchlist, with timestamps so staleness is visible. Workflows and the Items page use one price per item and AH, by a rule in Settings: the latest snapshot or the typical price. Vendor buy/sell prices come from REQ-1. [ref: DEC-23, DEC-27]
+  - **REQ-4.2** (SHOULD): Optional min AH price per item, set by hand and used for worst-case figures. [ref: DEC-10, DEC-27]
   - **REQ-4.3**: All price lookups go through one resolver function so modifiers (e.g. reputation) can be added later. Stored vendor prices are always base prices. [ref: DEC-8]
 - **REQ-5** (MUST): AH fee model as a reusable sell channel. [ref: DEC-13]
   - **REQ-5.1**: Cut on sale, deposit per listing duration, faction vs neutral AH; rates in configuration, not code.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { manualSnapshot, marketValue, normalizeLevels, parseLevels, type PriceSnapshot, priceStats, summarize, trimLevels, weightedMedian } from './snapshots';
+import { currentAhPrices, manualSnapshot, marketValue, normalizeLevels, parseLevels, type PriceSnapshot, priceStats, summarize, trimLevels, weightedMedian } from './snapshots';
 
 /** Linen Cloth as seen on the AH: a deep book, cheap end first, a few silly listings at the top. */
 const linen = [
@@ -206,5 +206,30 @@ describe('manual snapshot', () => {
     const b = manualSnapshot({ ...noUid, lowest: 1, lowestQty: 1, totalQty: null, more: [] });
     expect(a.uid).toMatch(/^manual-/);
     expect(a.uid).not.toBe(b.uid);
+  });
+});
+
+describe('current AH price for workflows', () => {
+  const snaps = [
+    snap(1, [{ price: 60, qty: 900 }], 3000),
+    snap(2, [{ price: 58, qty: 900 }], 3000),
+    snap(3, [{ price: 42, qty: 20 }], 3000),
+    { ...snap(4, [{ price: 70, qty: 5 }], null), ahType: 'neutral' as const },
+  ];
+
+  it("'latest' takes the newest snapshot per item and AH", () => {
+    const byKey = new Map(currentAhPrices(snaps, 'latest').map((p) => [`${p.itemId}:${p.ahType}`, p]));
+    expect(byKey.get('2589:faction')).toEqual({ itemId: 2589, ahType: 'faction', price: 42, observedAt: 3, n: 3 });
+    expect(byKey.get('2589:neutral')).toMatchObject({ price: 70, n: 1 });
+  });
+
+  it("'typical' takes the typical price, so one odd low does not move it", () => {
+    const faction = currentAhPrices(snaps, 'typical').find((p) => p.ahType === 'faction')!;
+    expect(faction.price).toBe(58);
+    expect(faction.observedAt).toBe(3);
+  });
+
+  it('has nothing for an item without snapshots', () => {
+    expect(currentAhPrices([], 'latest')).toEqual([]);
   });
 });
