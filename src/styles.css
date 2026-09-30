@@ -1542,3 +1542,9 @@ th.r .sort-btn {
   gap: 8px;
   flex-wrap: wrap;
 }
+
+.badge.shared {
+  color: #b9a4ff;
+  border-color: #3d3560;
+  margin-left: 4px;
+}

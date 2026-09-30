@@ -99,6 +99,47 @@ export function splitLegacy(legacy: Database, open: (bytes: Uint8Array) => Datab
   return { data: split('data'), user: split('user') };
 }
 
+function rowsOf(db: Database, sql: string, params: SqlValue[] = []): Row[] {
+  const stmt = db.prepare(sql);
+  try {
+    stmt.bind(params);
+    const rows: Row[] = [];
+    while (stmt.step()) rows.push(stmt.getAsObject() as Row);
+    return rows;
+  } finally {
+    stmt.free();
+  }
+}
+
+function snapshotFromRow(r: Row): PriceSnapshot {
+  return {
+    id: Number(r.id),
+    uid: String(r.uid),
+    itemId: Number(r.item_id),
+    observedAt: Number(r.observed_at),
+    ahType: r.ah_type === 'neutral' ? 'neutral' : 'faction',
+    source: String(r.source) as SnapshotSource,
+    totalQty: num(r.total_qty),
+    levels: json<[number, number][]>(r.levels, []).map(([price, qty]): PriceLevel => ({ price, qty })),
+    truncated: Number(r.truncated) === 1,
+    owner: r.owner === null || r.owner === undefined ? null : String(r.owner),
+    ...(r.origin !== null && r.origin !== undefined ? { origin: String(r.origin) } : {}),
+  };
+}
+
+const KIND_NAME: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
+
+/**
+ * Checks that a file holds what an import button expects (DEC-28). A legacy combined file holds game
+ * and personal data, so either of those buttons takes it.
+ */
+export function expectKind(found: DbKind | 'legacy' | 'empty', expected: DbKind): void {
+  if (found === 'empty') throw new Error('The file is empty');
+  if (found === expected || (found === 'legacy' && expected !== 'prices')) return;
+  if (found === 'legacy') throw new Error('This is an old file with game data and personal data, not AH prices.');
+  throw new Error(`This file holds ${KIND_NAME[found]}, not ${KIND_NAME[expected]}.`);
+}
+
 /**
  * Thin typed access to the databases. Call `onChange` after writes so the caller can persist
  * the database that changed.
@@ -118,15 +159,7 @@ export class Repo {
   }
 
   private all(kind: DbKind, sql: string, params: SqlValue[] = []): Row[] {
-    const stmt = this[kind].prepare(sql);
-    try {
-      stmt.bind(params);
-      const rows: Row[] = [];
-      while (stmt.step()) rows.push(stmt.getAsObject() as Row);
-      return rows;
-    } finally {
-      stmt.free();
-    }
+    return rowsOf(this[kind], sql, params);
   }
 
   private run(kind: DbKind, sql: string, params: SqlValue[] = []): void {
@@ -327,8 +360,8 @@ export class Repo {
     const sum = summarize(snap);
     this.prices.run(
       `INSERT OR IGNORE INTO price_snapshots
-        (uid, item_id, observed_at, ah_type, source, total_qty, levels, truncated, min_price, min_qty, market_value, confidence)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        (uid, item_id, observed_at, ah_type, source, total_qty, levels, truncated, min_price, min_qty, market_value, confidence, owner, origin)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         snap.uid,
         snap.itemId,
@@ -342,6 +375,8 @@ export class Repo {
         sum.minQty,
         sum.marketValue,
         sum.confidence,
+        snap.owner === undefined ? this.playerId() : snap.owner,
+        snap.origin ?? null,
       ],
     );
     const added = this.prices.getRowsModified() > 0;
@@ -362,17 +397,59 @@ export class Repo {
       params.push(filter.since);
     }
     const sql = `SELECT * FROM price_snapshots ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY observed_at, id`;
-    return this.all('prices', sql, params).map((r) => ({
-      id: Number(r.id),
-      uid: String(r.uid),
-      itemId: Number(r.item_id),
-      observedAt: Number(r.observed_at),
-      ahType: r.ah_type === 'neutral' ? 'neutral' : 'faction',
-      source: String(r.source) as SnapshotSource,
-      totalQty: num(r.total_qty),
-      levels: json<[number, number][]>(r.levels, []).map(([price, qty]): PriceLevel => ({ price, qty })),
-      truncated: Number(r.truncated) === 1,
-    }));
+    return this.all('prices', sql, params).map(snapshotFromRow);
+  }
+
+  /**
+   * Adds the snapshots of another prices file to yours (DEC-28): "Add pricing data". Snapshots you
+   * already have (same uid) are skipped, so nothing of yours changes and the same file twice adds
+   * nothing. Added snapshots are marked with `origin`: where the file got them, else the file's name.
+   */
+  addSnapshotsFrom(other: Database, origin: string): { added: number; skipped: number } {
+    const theirs = rowsOf(other, 'SELECT * FROM price_snapshots ORDER BY observed_at, id').map(snapshotFromRow);
+    const me = this.playerId();
+    let added = 0;
+    this.prices.exec('BEGIN');
+    try {
+      for (const { id: _, ...snap } of theirs) {
+        // Your own snapshots (a backup) come back as yours; anyone else's are marked with where they came from.
+        const mine = snap.owner === me;
+        const row = mine ? { ...snap, origin: undefined } : { ...snap, owner: snap.owner ?? null, origin: snap.origin ?? origin };
+        if (this.addSnapshot(row)) added++;
+      }
+      this.prices.exec('COMMIT');
+    } catch (e) {
+      this.prices.exec('ROLLBACK');
+      throw e;
+    }
+    return { added, skipped: theirs.length - added };
+  }
+
+  /**
+   * Your random player id, kept in personal data, so prices you recorded can be told apart from
+   * other players' (DEC-28). Created on first use.
+   */
+  playerId(): string {
+    if (this.player) return this.player;
+    const row = this.all('user', `SELECT value FROM settings WHERE key = 'playerId'`)[0];
+    if (row) return (this.player = String(row.value));
+    this.player = crypto.randomUUID();
+    this.run('user', `INSERT INTO settings (key, value) VALUES ('playerId', ?)`, [this.player]);
+    return this.player;
+  }
+  private player: string | null = null;
+
+  /** Marks snapshots with no owner and no origin as yours: those recorded before player ids. */
+  claimUnownedSnapshots(): void {
+    const n = Number(this.all('prices', 'SELECT COUNT(*) AS n FROM price_snapshots WHERE owner IS NULL AND origin IS NULL')[0].n);
+    if (n) this.run('prices', 'UPDATE price_snapshots SET owner = ? WHERE owner IS NULL AND origin IS NULL', [this.playerId()]);
+  }
+
+  /** Removes every snapshot added from someone else's file; your own stay. Returns how many went. */
+  removeAddedSnapshots(): number {
+    const n = this.all('prices', 'SELECT COUNT(*) AS n FROM price_snapshots WHERE origin IS NOT NULL')[0].n;
+    this.run('prices', 'DELETE FROM price_snapshots WHERE origin IS NOT NULL');
+    return Number(n);
   }
 
   deleteSnapshot(id: number): void {

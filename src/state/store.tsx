@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } from '../db/browser';
+import { openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
 import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
@@ -33,7 +33,9 @@ interface StoreValue extends Snapshot {
   mutateAsync: <T>(fn: (repo: Repo) => Promise<T>) => Promise<T>;
   exportDb: (kind: DbKind) => Uint8Array;
   /** Replaces the database(s) the file holds and returns which were replaced. */
-  importDb: (bytes: Uint8Array) => Promise<DbKind[]>;
+  importDb: (bytes: Uint8Array, kind: 'data' | 'user') => Promise<DbKind[]>;
+  /** Adds the AH prices of another player's file to yours; yours are never replaced (DEC-28). */
+  addPrices: (bytes: Uint8Array, fileName: string) => Promise<{ added: number; skipped: number }>;
   /** Replaces the given databases with empty ones. */
   clearDb: (kinds: DbKind[]) => Promise<void>;
 }
@@ -77,6 +79,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Old personal data (a first load after the update, or an imported old export) still has AH
       // prices in its own table: move them into price snapshots (DEC-27).
       r.moveLegacyPrices();
+      // Prices recorded before player ids are yours (DEC-28).
+      r.claimUnownedSnapshots();
       setRepo(r);
       setSnap(readSnapshot(r));
     },
@@ -139,7 +143,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
       exportDb: (kind) => repo[kind].export(),
-      importDb: async (bytes) => replace(await openDbsFromBytes(bytes)),
+      importDb: async (bytes, kind) => replace(await openDbsFromBytes(bytes, kind)),
+      addPrices: async (bytes, fileName) => {
+        const file = await openPricesFile(bytes);
+        try {
+          return repo.addSnapshotsFrom(file, fileName);
+        } finally {
+          file.close();
+          refresh();
+        }
+      },
       clearDb: async (kinds) => void (await replace(await openFreshDbs(kinds))),
     };
   }, [repo, snap, attach]);

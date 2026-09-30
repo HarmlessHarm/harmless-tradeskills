@@ -33,6 +33,13 @@ export interface PriceSnapshot {
   levels: PriceLevel[];
   /** True when `levels` does not hold the whole book (manual entry, or a trimmed scan). */
   truncated: boolean;
+  /**
+   * Random id of the player who recorded it (DEC-28). Left out when saving means "me"; null means
+   * unknown (another player's snapshot from before ids).
+   */
+  owner?: string | null;
+  /** Where a snapshot added from another player's file came from (its file name). Absent for your own (DEC-28). */
+  origin?: string;
 }
 
 export interface SnapshotSummary {

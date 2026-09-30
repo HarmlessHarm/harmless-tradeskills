@@ -152,6 +152,11 @@ export function PricesCard({ r }: { r: Row }) {
                   <tr key={s.uid}>
                     <td title={new Date(s.observedAt).toLocaleString()}>
                       {ago(s.observedAt)} {s.source !== 'manual' && <span className="badge">{s.source}</span>}
+                      {s.origin && (
+                        <span className="badge shared" title={`Added from ${s.origin}`}>
+                          shared
+                        </span>
+                      )}
                     </td>
                     <td className="r">
                       <Money value={sum.minPrice} />

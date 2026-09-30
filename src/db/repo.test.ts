@@ -6,7 +6,7 @@ import { deShuffle } from '../test/fixtures';
 import type { Transaction } from '../engine/ledger';
 import type { PriceSnapshot } from '../engine/snapshots';
 import { DE_SEED_NOTE } from './deSeed';
-import { dbKind, migrate, Repo, splitLegacy } from './repo';
+import { dbKind, expectKind, migrate, Repo, splitLegacy } from './repo';
 import { APPLICATION_ID, LEGACY_MIGRATIONS, USER_MIGRATIONS } from './schema';
 
 describe('repo', () => {
@@ -222,7 +222,7 @@ describe('price snapshots', () => {
   it('round trips snapshots and stores the derived stats', async () => {
     const repo = await freshRepo();
     expect(repo.addSnapshot(snap('a', 2589, 10))).toBe(true);
-    expect(repo.listSnapshots()).toEqual([{ ...snap('a', 2589, 10), id: 1 }]);
+    expect(repo.listSnapshots()).toEqual([{ ...snap('a', 2589, 10), id: 1, owner: repo.playerId() }]);
     const row = repo.prices.exec('SELECT min_price, min_qty, market_value, confidence FROM price_snapshots')[0].values[0];
     // 15% of 3000 = 450 units is reached in the 58c row, which is taken whole (under 30%).
     expect(row).toEqual([56, 100, Math.round((100 * 56 + 450 * 58) / 550), 'solid']);
@@ -234,7 +234,8 @@ describe('price snapshots', () => {
     expect(repo.addSnapshot(snap('a', 2589, 10))).toBe(true);
     expect(repo.addSnapshot(snap('a', 2589, 10))).toBe(false);
     expect(repo.listSnapshots()).toHaveLength(1);
-    expect(changed).toEqual(['prices']);
+    // The first snapshot also creates your player id in the personal database (DEC-28).
+    expect(changed).toEqual(['user', 'prices']);
   });
 
   it('filters by item and time, oldest first', async () => {
@@ -246,6 +247,70 @@ describe('price snapshots', () => {
     expect(repo.listSnapshots({ since: 20 }).map((s) => s.uid)).toEqual(['b', 'c']);
     repo.deleteSnapshot(repo.listSnapshots({ itemId: 4306 })[0].id!);
     expect(repo.listSnapshots().map((s) => s.uid)).toEqual(['a', 'c']);
+  });
+
+  it("adds another player's prices without touching yours (DEC-28)", async () => {
+    const mine = await freshRepo();
+    mine.addSnapshot(snap('mine-1', 2589, 10));
+    mine.addSnapshot(snap('shared-1', 2589, 20));
+    const theirs = await freshRepo();
+    theirs.addSnapshot({ ...snap('shared-1', 2589, 20), levels: [{ price: 999, qty: 1 }] }); // same snapshot, differs: yours wins
+    theirs.addSnapshot(snap('theirs-1', 2589, 30));
+    theirs.addSnapshot({ ...snap('third-1', 4306, 40), origin: 'friend.sqlite' }); // they got it from someone else
+
+    expect(mine.addSnapshotsFrom(theirs.prices, 'bob.sqlite')).toEqual({ added: 2, skipped: 1 });
+    const all = mine.listSnapshots();
+    expect(all.map((s) => [s.uid, s.origin])).toEqual([
+      ['mine-1', undefined],
+      ['shared-1', undefined],
+      ['theirs-1', 'bob.sqlite'],
+      ['third-1', 'friend.sqlite'],
+    ]);
+    expect(all.find((s) => s.uid === 'shared-1')!.levels[0].price).toBe(56);
+    // The same file again adds nothing.
+    expect(mine.addSnapshotsFrom(theirs.prices, 'bob.sqlite')).toEqual({ added: 0, skipped: 3 });
+
+    expect(mine.removeAddedSnapshots()).toBe(2);
+    expect(mine.listSnapshots().map((s) => s.uid)).toEqual(['mine-1', 'shared-1']);
+  });
+
+  it('restores your own backup as yours, and marks prices from before player ids as shared', async () => {
+    const mine = await freshRepo();
+    mine.addSnapshot(snap('mine-1', 2589, 10));
+    const backup = new (await initSqlJs()).Database(mine.prices.export());
+    mine.removeAddedSnapshots();
+    mine.prices.exec('DELETE FROM price_snapshots');
+    expect(mine.addSnapshotsFrom(backup, 'my-backup.sqlite')).toEqual({ added: 1, skipped: 0 });
+    expect(mine.listSnapshots()[0]).toMatchObject({ uid: 'mine-1', owner: mine.playerId() });
+    expect(mine.listSnapshots()[0].origin).toBeUndefined();
+    expect(mine.removeAddedSnapshots()).toBe(0);
+
+    // Another player's file from before ids: no owner, so not yours.
+    const old = await freshRepo();
+    old.addSnapshot({ ...snap('old-1', 2589, 20), owner: null });
+    mine.addSnapshotsFrom(old.prices, 'old.sqlite');
+    expect(mine.listSnapshots().find((s) => s.uid === 'old-1')).toMatchObject({ owner: null, origin: 'old.sqlite' });
+  });
+
+  it('claims prices recorded before player ids as yours', async () => {
+    const repo = await freshRepo();
+    repo.addSnapshot({ ...snap('a', 2589, 10), owner: null });
+    repo.addSnapshot({ ...snap('b', 2589, 20), owner: null, origin: 'bob.sqlite' });
+    repo.claimUnownedSnapshots();
+    expect(repo.listSnapshots().map((s) => [s.uid, s.owner === repo.playerId()])).toEqual([
+      ['a', true],
+      ['b', false],
+    ]);
+  });
+
+  it('lets each import button take only its own kind of file', () => {
+    expect(() => expectKind('prices', 'prices')).not.toThrow();
+    expect(() => expectKind('legacy', 'user')).not.toThrow();
+    expect(() => expectKind('legacy', 'data')).not.toThrow();
+    expect(() => expectKind('user', 'prices')).toThrow('This file holds personal data, not AH prices.');
+    expect(() => expectKind('prices', 'data')).toThrow('This file holds AH prices, not game data.');
+    expect(() => expectKind('legacy', 'prices')).toThrow(/old file/);
+    expect(() => expectKind('empty', 'user')).toThrow('The file is empty');
   });
 
   it('keeps prices out of the game data and personal data files', async () => {

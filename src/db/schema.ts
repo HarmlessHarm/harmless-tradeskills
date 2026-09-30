@@ -138,6 +138,10 @@ export const PRICES_MIGRATIONS: string[] = [
   );
   CREATE INDEX price_snap_item ON price_snapshots (item_id, observed_at);
   `,
+  // Who recorded a snapshot (a random player id kept in personal data), and for another player's
+  // snapshots the file they were added from (DEC-28). Yours have no origin.
+  `ALTER TABLE price_snapshots ADD COLUMN owner TEXT;
+  ALTER TABLE price_snapshots ADD COLUMN origin TEXT;`,
 ];
 
 /** The kinds a legacy combined file is split into. Prices did not exist yet. */

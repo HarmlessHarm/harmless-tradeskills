@@ -38,10 +38,13 @@ and a 15% target margin.
 
 | # | Step | Expected |
 |---|---|---|
-| B1 | Settings > Data. | Text says three databases: Game data, **AH prices**, Personal data. Buttons Export game data / **Export AH prices** / Export personal data / Import, and Clear game data / **Clear AH prices** / Clear personal data / Clear all data. |
+| B1 | Settings > Data. | Text says three databases: Game data, **AH prices**, Personal data. Export buttons for all three; **Import game data**, **Add pricing data**, **Import personal data**; danger zone Clear game data / **Remove added prices** / **Clear AH prices** / Clear personal data / Clear all data. |
 | B2 | After recording some prices (section E), **Export AH prices**. | A file `harmless-tradeskills-prices-<date>.sqlite` downloads. |
 | B3 | **Clear AH prices**, confirm. | Watchlist price columns empty (n = 0); workflows lose their AH prices; min AH prices, ledger and favorites stay. |
-| B4 | Import the file from B2. | "Imported AH prices from …". Prices are back. Importing it a second time adds nothing (n unchanged). |
+| B4 | **Add pricing data** with the file from B2. | "Added N AH prices from …. Your own prices are unchanged." Prices are back **without** a "shared" badge (they are yours). Adding it a second time: "Added 0 … (N you already had)". |
+| B4b | Get an AH prices export from **another player** (or another browser profile that recorded different prices) and **Add pricing data** with it. | Their new prices appear with a purple **shared** badge (hover: "Added from <file>"); any snapshot you already had keeps your version; your own prices are unchanged. |
+| B4c | **Remove added prices**, confirm. | "Removed N added AH prices." Only the shared ones are gone; your own prices stay. |
+| B4d | Use the wrong button: an AH prices file on **Import personal data**, and a personal data file on **Add pricing data**. | Refused straight away, without a "Replace…?" question: "This file holds AH prices, not personal data." / "This file holds personal data, not AH prices." Nothing changes. |
 | B5 | *Upgrade path (if you have one):* import a **personal data export made before this change** (it has AH prices in the old format). | "Imported personal data". Its AH prices appear on the Items page and in workflows, with their old dates; its min AH prices appear in the Min AH price column. Importing the same old file again does not raise any item's n on the watchlist. |
 
 ## C. Watchlist table (step 3)

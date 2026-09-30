@@ -1,7 +1,7 @@
 import initSqlJs, { type Database } from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url';
 import { del, get, set } from 'idb-keyval';
-import { dbKind, type DbKind, type Dbs, migrate, splitLegacy } from './repo';
+import { dbKind, type DbKind, type Dbs, expectKind, migrate, splitLegacy } from './repo';
 
 /**
  * Browser SQLite: sql.js (SQLite compiled to WASM) in memory, with the database files persisted to
@@ -46,22 +46,48 @@ export async function openBrowserDbs(): Promise<Dbs> {
 }
 
 /**
- * Opens an imported file. Returns the databases it replaces: one for a data, user or prices file,
- * data and user for a legacy combined file.
+ * Opens a file to replace one kind of data with (game data or personal data, DEC-28). Throws if the
+ * file holds another kind. Returns the databases it replaces: the expected one, or data and user for
+ * a legacy combined file.
  */
-export async function openDbsFromBytes(bytes: Uint8Array): Promise<Partial<Dbs>> {
+export async function openDbsFromBytes(bytes: Uint8Array, expected: 'data' | 'user'): Promise<Partial<Dbs>> {
   const SQL = await sql();
   const db = new SQL.Database(bytes);
   try {
     const kind = dbKind(db);
+    expectKind(kind, expected);
     if (kind === 'legacy') {
       const dbs = splitLegacy(db, (b) => new SQL.Database(b));
       db.close();
       return dbs;
     }
-    if (kind === 'empty') throw new Error('The file is empty');
-    migrate(db, kind);
-    return { [kind]: db };
+    migrate(db, expected);
+    return { [expected]: db };
+  } catch (e) {
+    db.close();
+    throw e;
+  }
+}
+
+/** Throws unless the file holds the expected kind, so a wrong file is refused before anything is asked. */
+export async function checkFileKind(bytes: Uint8Array, expected: DbKind): Promise<void> {
+  const SQL = await sql();
+  const db = new SQL.Database(bytes);
+  try {
+    expectKind(dbKind(db), expected);
+  } finally {
+    db.close();
+  }
+}
+
+/** Opens a prices file to add from ("Add pricing data"). The caller closes it. */
+export async function openPricesFile(bytes: Uint8Array): Promise<Database> {
+  const SQL = await sql();
+  const db = new SQL.Database(bytes);
+  try {
+    expectKind(dbKind(db), 'prices');
+    migrate(db, 'prices');
+    return db;
   } catch (e) {
     db.close();
     throw e;
