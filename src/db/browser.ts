@@ -1,7 +1,8 @@
 import initSqlJs, { type Database } from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm-browser.wasm?url';
+import seedUrl from './seed/gamedata.sqlite?url';
 import { del, get, set } from 'idb-keyval';
-import { dbKind, type DbKind, type Dbs, expectKind, migrate, splitLegacy } from './repo';
+import { dbKind, type DbKind, type Dbs, expectKind, exportBytes, migrate, splitLegacy } from './repo';
 
 /**
  * Browser SQLite: sql.js (SQLite compiled to WASM) in memory, with the database files persisted to
@@ -20,6 +21,33 @@ const LEGACY_KEY = 'harmless-tradeskills.sqlite';
 let sqlPromise: ReturnType<typeof initSqlJs> | null = null;
 const sql = () => (sqlPromise ??= initSqlJs({ locateFile: () => wasmUrl }));
 
+/**
+ * A new database. With `seed`, game data starts from `seed/gamedata.sqlite`: professions 1 to 150
+ * with some vendor prices. Without it, or if the seed cannot be loaded (offline on first use), game
+ * data is empty apart from the default disenchant rules.
+ */
+async function newDb(SQL: Awaited<ReturnType<typeof sql>>, kind: DbKind, seed: boolean): Promise<Database> {
+  if (kind === 'data' && seed) {
+    try {
+      const res = await fetch(seedUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const db = new SQL.Database(new Uint8Array(await res.arrayBuffer()));
+      try {
+        migrate(db, 'data');
+        return db;
+      } catch (e) {
+        db.close();
+        throw e;
+      }
+    } catch (e) {
+      console.warn('Could not load the game data seed, starting empty.', e);
+    }
+  }
+  const db = new SQL.Database();
+  migrate(db, kind);
+  return db;
+}
+
 export async function openBrowserDbs(): Promise<Dbs> {
   const SQL = await sql();
   const [data, user, prices, legacy] = await Promise.all([
@@ -29,8 +57,8 @@ export async function openBrowserDbs(): Promise<Dbs> {
     get<Uint8Array>(LEGACY_KEY),
   ]);
   const open = async (kind: DbKind, bytes: Uint8Array | undefined) => {
-    const db = bytes ? new SQL.Database(bytes) : new SQL.Database();
-    migrate(db, kind);
+    const db = bytes ? new SQL.Database(bytes) : await newDb(SQL, kind, true);
+    if (bytes) migrate(db, kind);
     await persist(kind, db);
     return db;
   };
@@ -94,16 +122,18 @@ export async function openPricesFile(bytes: Uint8Array): Promise<Database> {
   }
 }
 
-/** New empty databases of the given kinds, as on first use (disenchant rules are seeded again). */
-export async function openFreshDbs(kinds: DbKind[]): Promise<Partial<Dbs>> {
+/** New databases of the given kinds. With `seed`, game data is the starter set as on first use (see newDb). */
+export async function openFreshDbs(kinds: DbKind[], seed: boolean): Promise<Partial<Dbs>> {
   const SQL = await sql();
   const dbs: Partial<Dbs> = {};
-  for (const kind of kinds) {
-    const db = new SQL.Database();
-    migrate(db, kind);
-    dbs[kind] = db;
-  }
+  for (const kind of kinds) dbs[kind] = await newDb(SQL, kind, seed);
   return dbs;
+}
+
+/** A database as a file to download. See exportBytes. */
+export async function exportFile(kind: DbKind, db: Database): Promise<Uint8Array> {
+  const SQL = await sql();
+  return exportBytes(db, kind, (b) => new SQL.Database(b));
 }
 
 export async function persist(kind: DbKind, db: Database): Promise<void> {

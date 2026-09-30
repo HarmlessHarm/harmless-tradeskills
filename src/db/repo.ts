@@ -133,6 +133,22 @@ const KIND_NAME: Record<DbKind, string> = { data: 'game data', user: 'personal d
  * Checks that a file holds what an import button expects (DEC-28). A legacy combined file holds game
  * and personal data, so either of those buttons takes it.
  */
+/**
+ * The bytes of a database for a file export. Game data leaves out the saved Wowhead tooltips: they
+ * are only shown for checking a parse, and make up most of the file. `open` creates a database from
+ * bytes (sql.js `new SQL.Database(bytes)`).
+ */
+export function exportBytes(db: Database, kind: DbKind, open: (bytes: Uint8Array) => Database): Uint8Array {
+  if (kind !== 'data') return db.export();
+  const copy = open(db.export());
+  try {
+    copy.exec('UPDATE items SET raw_tooltip = NULL; UPDATE recipes SET raw_tooltip = NULL; VACUUM;');
+    return copy.export();
+  } finally {
+    copy.close();
+  }
+}
+
 export function expectKind(found: DbKind | 'legacy' | 'empty', expected: DbKind): void {
   if (found === 'empty') throw new Error('The file is empty');
   if (found === expected || (found === 'legacy' && expected !== 'prices')) return;

@@ -109,6 +109,18 @@ button.danger:hover:not(:disabled) {
 .panel.danger-zone {
   border-color: color-mix(in srgb, var(--neg) 45%, var(--line));
 }
+.danger-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 4px 16px 4px 0;
+}
+.danger-table td {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
 .panel.danger-zone h2 {
   color: var(--neg);
 }

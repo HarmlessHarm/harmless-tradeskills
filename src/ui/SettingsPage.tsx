@@ -271,19 +271,21 @@ function DataSettings() {
   const [progress, setProgress] = useState<string | null>(null);
   const [clearMsg, setClearMsg] = useState<string | null>(null);
 
-  const clear = async (kinds: DbKind[]) => {
+  /** Reset puts game data back to the starter set, clear leaves it empty. Other data is emptied either way. */
+  const clear = async (kinds: DbKind[], reset = false) => {
     const what = listText(kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`));
-    if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
+    const after = kinds.includes('data') ? (reset ? ' Game data goes back to the starter set.' : ' Game data is left empty.') : '';
+    if (!confirm(`Delete all ${what} in this browser?${after} This cannot be undone. Export first if you want a backup.`)) return;
     try {
-      await clearDb(kinds);
-      setClearMsg(`Cleared ${listText(kinds.map((k) => KIND_LABEL[k]))}.`);
+      await clearDb(kinds, reset);
+      setClearMsg(`${reset ? 'Reset' : 'Cleared'} ${listText(kinds.map((k) => KIND_LABEL[k]))}.`);
     } catch (err) {
-      setClearMsg(`Clearing failed: ${errorText(err)}`);
+      setClearMsg(`${reset ? 'Resetting' : 'Clearing'} failed: ${errorText(err)}`);
     }
   };
 
-  const download = (kind: DbKind) => {
-    const bytes = exportDb(kind);
+  const download = async (kind: DbKind) => {
+    const bytes = await exportDb(kind);
     const blob = new Blob([bytes.slice().buffer], { type: 'application/vnd.sqlite3' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -320,7 +322,7 @@ function DataSettings() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as three SQLite databases. Export all three for backups or to move to another machine.
+          Everything is stored in this browser as three SQLite databases. Export all three for backups or to move to another machine. Game data exports leave out the saved Wowhead tooltips.
         </p>
         <div className="data-kinds">
           {DATA_CARDS.map((c) => (
@@ -361,16 +363,41 @@ function DataSettings() {
 
       <Panel title="Danger zone" className="danger-zone">
         <p className="small muted">
-          Permanently delete data stored in this browser. Disenchant rules and settings go back to their defaults.
+          Permanently delete data stored in this browser. <b>Reset</b> puts game data back to the starter set (professions 1 to 150). <b>Clear</b> leaves it
+          empty. Disenchant rules and settings go back to their defaults either way.
         </p>
-        <div className="add-row">
-          <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
-          <button className="danger" onClick={removeAdded}>Remove added prices</button>
-          <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
-          <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
-          <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>
-          {clearMsg && <span className="small muted">{clearMsg}</span>}
-        </div>
+        <table className="form-table danger-table">
+          <tbody>
+            <tr>
+              <th>Game data</th>
+              <td>
+                <button className="danger" onClick={() => clear(['data'], true)}>Reset game data</button>
+                <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+              </td>
+            </tr>
+            <tr>
+              <th>AH prices</th>
+              <td>
+                <button className="danger" onClick={removeAdded}>Remove added prices</button>
+                <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
+              </td>
+            </tr>
+            <tr>
+              <th>Personal data</th>
+              <td>
+                <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
+              </td>
+            </tr>
+            <tr>
+              <th>Everything</th>
+              <td>
+                <button className="danger" onClick={() => clear(['data', 'prices', 'user'], true)}>Reset all data</button>
+                <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {clearMsg && <p className="small muted">{clearMsg}</p>}
       </Panel>
     </div>
   );
