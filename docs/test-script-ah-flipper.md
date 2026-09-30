@@ -38,7 +38,7 @@ and a 15% target margin.
 
 | # | Step | Expected |
 |---|---|---|
-| B1 | Settings > Data. | Text says three databases: Game data, **AH prices**, Personal data. Export buttons for all three; **Import game data**, **Add pricing data**, **Import personal data**; danger zone Clear game data / **Remove added prices** / **Clear AH prices** / Clear personal data / Clear all data. |
+| B1 | Settings > Data. | Three equal cards, centred in the panel: **Personal data** (person icon), **AH prices** (coins icon), **Game data** (book icon), each saying what it holds, with an **Export …** button (download icon) and **Import personal data** / **Add pricing data** (plus icon) / **Import game data** (upload icon). On a phone the cards stack, still centred. Danger zone: Clear game data / **Remove added prices** / **Clear AH prices** / Clear personal data / Clear all data. |
 | B2 | After recording some prices (section E), **Export AH prices**. | A file `harmless-tradeskills-prices-<date>.sqlite` downloads. |
 | B3 | **Clear AH prices**, confirm. | Watchlist price columns empty (n = 0); workflows lose their AH prices; min AH prices, ledger and favorites stay. |
 | B4 | **Add pricing data** with the file from B2. | "Added N AH prices from …. Your own prices are unchanged." Prices are back **without** a "shared" badge (they are yours). Adding it a second time: "Added 0 … (N you already had)". |

@@ -1548,3 +1548,46 @@ th.r .sort-btn {
   border-color: #3d3560;
   margin-left: 4px;
 }
+
+/* Settings > Data: one card per database, centred in the panel. */
+.data-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 210px);
+  justify-content: center;
+  gap: 14px;
+  margin: 14px 0 10px;
+}
+.data-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 16px 14px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.data-kind-icon {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+}
+.data-kind h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.data-kind p {
+  margin: 0 0 4px;
+  flex: 1;
+}
+.data-kind button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
