@@ -120,6 +120,27 @@ function TourRunner() {
   );
 }
 
+interface Box {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+const sameRect = (a: Box | null, b: Box | null) =>
+  a === b || (!!a && !!b && a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height);
+
+function union(first: Box, rest: Box[]): Box {
+  const all = [first, ...rest];
+  const top = Math.min(...all.map((r) => r.top));
+  const left = Math.min(...all.map((r) => r.left));
+  const right = Math.max(...all.map((r) => r.right));
+  const bottom = Math.max(...all.map((r) => r.bottom));
+  return { top, left, right, bottom, width: right - left, height: bottom - top };
+}
+
 const GAP = 12;
 const PAD = 6;
 
@@ -143,7 +164,9 @@ function Bubble({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [rect, setRect] = useState<DOMRect | null>(null);
+  const [rect, setRect] = useState<Box | null>(null);
+  /** The target plus any open dropdown in it: the bubble is placed outside this. */
+  const [avoid, setAvoid] = useState<Box | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const scrolled = useRef(false);
   const onPage = tab() === step.page;
@@ -160,7 +183,11 @@ function Bubble({
         if (r.top < 60 || r.bottom > window.innerHeight - 40) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
       const r = el?.getBoundingClientRect() ?? null;
-      setRect((old) => (old && r && old.top === r.top && old.left === r.left && old.width === r.width && old.height === r.height ? old : r));
+      setRect((old) => (sameRect(old, r) ? old : r));
+      // Open dropdowns inside the target (search results) are part of what the bubble must not cover.
+      const lists = el ? [...el.querySelectorAll<HTMLElement>('.combo-list')].map((l) => l.getBoundingClientRect()) : [];
+      const a = r && lists.length ? union(r, lists) : r;
+      setAvoid((old) => (sameRect(old, a) ? old : a));
       raf = requestAnimationFrame(measure);
     };
     measure();
@@ -169,17 +196,20 @@ function Bubble({
 
   useLayoutEffect(() => {
     const b = ref.current;
-    if (!b || !rect) return setPos(null);
+    if (!b || !avoid) return setPos(null);
     const bw = b.offsetWidth;
     const bh = b.offsetHeight;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const below = rect.bottom + GAP + bh <= vh;
-    const above = rect.top - GAP - bh >= 0;
-    const top = below || !above ? Math.min(rect.bottom + GAP, vh - bh - 8) : rect.top - GAP - bh;
-    const left = Math.max(8, Math.min(rect.left, vw - bw - 8));
-    setPos({ top: Math.max(8, top), left });
-  }, [rect]);
+    const clampTop = (t: number) => Math.max(8, Math.min(t, vh - bh - 8));
+    const clampLeft = (l: number) => Math.max(8, Math.min(l, vw - bw - 8));
+    // Below, above, right, left of what to avoid; else below the target itself, over the rest.
+    if (avoid.bottom + GAP + bh <= vh) setPos({ top: avoid.bottom + GAP, left: clampLeft(avoid.left) });
+    else if (avoid.top - GAP - bh >= 0) setPos({ top: avoid.top - GAP - bh, left: clampLeft(avoid.left) });
+    else if (avoid.right + GAP + bw <= vw) setPos({ top: clampTop(avoid.top), left: avoid.right + GAP });
+    else if (avoid.left - GAP - bw >= 0) setPos({ top: clampTop(avoid.top), left: avoid.left - GAP - bw });
+    else setPos({ top: clampTop(rect!.bottom + GAP), left: clampLeft(rect!.left) });
+  }, [avoid, rect]);
 
   const body = typeof step.body === 'function' ? step.body(ctx) : step.body;
   const auto = step.done !== undefined;
