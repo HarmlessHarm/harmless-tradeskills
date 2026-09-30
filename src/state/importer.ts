@@ -49,7 +49,7 @@ export async function importRecipe(
   const recipe: RecipeRecord = {
     id,
     spellId,
-    // Wowhead's tooltip has no profession or learning info, so keep what was set earlier (by bulk import or by hand).
+    // Wowhead's tooltip has no profession or learning info, so keep what was set earlier (from a pasted recipe table or by hand).
     imported: {
       ...parsed.fields,
       profession: parsed.fields.profession ?? existing?.imported.profession ?? null,
@@ -89,9 +89,7 @@ export async function importMissingItems(repo: Repo, ids: number[], fetcher?: Fe
 export interface BulkResult {
   imported: number;
   skipped: number;
-  /** Recipes whose profession was set by this run. */
-  tagged: number;
-  /** Recipes whose required skill, source or skill range was set by this run. */
+  /** Recipes whose profession, required skill, source or skill range was set by this run. */
   learning: number;
   errors: string[];
   warnings: string[];
@@ -101,18 +99,10 @@ export interface BulkResult {
  * Import a pasted list of items and spells one request at a time. Spells go first, because a
  * recipe import also pulls in its reagents and created item, which then need no separate request.
  */
-/** Set the profession on an imported recipe, as a base value so it is not shown as an edit. */
-export function setRecipeProfession(repo: Repo, spellId: number, profession: string): boolean {
-  const r = repo.listRecipes().find((x) => x.spellId === spellId);
-  if (!r || r.imported.profession === profession) return false;
-  repo.saveRecipe({ ...r, imported: { ...r.imported, profession }, updatedAt: Date.now() });
-  return true;
-}
-
 export async function bulkImport(
   repo: Repo,
   refs: WowheadRef[],
-  opts: { force: boolean; profession?: string | null; recipeRows?: PastedRecipeRow[]; fetcher?: Fetcher },
+  opts: { force: boolean; recipeRows?: PastedRecipeRow[]; fetcher?: Fetcher },
   onProgress: (done: number, total: number) => void,
 ): Promise<BulkResult> {
   const ordered = [...refs.filter((r) => r.type === 'spell'), ...refs.filter((r) => r.type === 'item')];
@@ -128,7 +118,7 @@ export async function bulkImport(
   const markPulledIn = () => {
     if (!opts.force) for (const r of todo) if (r.type === 'item' && !done.has(refKey(r)) && has(r)) done.add(refKey(r));
   };
-  const result: BulkResult = { imported: 0, skipped: 0, tagged: 0, learning: 0, errors: [], warnings: [] };
+  const result: BulkResult = { imported: 0, skipped: 0, learning: 0, errors: [], warnings: [] };
   const rowInfo = new Map((opts.recipeRows ?? []).map((r) => [r.spellId, r]));
   let fetched = false;
   onProgress(0, todo.length);
@@ -157,8 +147,7 @@ export async function bulkImport(
       markPulledIn();
       onProgress(done.size, todo.length);
     }
-    // Tag pasted recipes with the chosen profession, including ones that were already imported.
-    if (ref.type === 'spell' && opts.profession && setRecipeProfession(repo, ref.id, opts.profession)) result.tagged++;
+    // Rows copied from a recipe table say the profession and how it is learned, also for recipes already imported.
     const info = ref.type === 'spell' ? rowInfo.get(ref.id) : undefined;
     if (info && setRecipeLearning(repo, info)) result.learning++;
   }
@@ -166,20 +155,22 @@ export async function bulkImport(
 }
 
 /**
- * Store how a recipe is learned, from a pasted recipe table row, as base values so they are not
- * shown as edits. Values the row does not have are kept. Returns whether anything changed.
+ * Store a recipe's profession and how it is learned, from a pasted recipe table row, as base
+ * values so they are not shown as edits. Values the row does not have are kept. Returns whether
+ * anything changed.
  */
 export function setRecipeLearning(repo: Repo, row: PastedRecipeRow): boolean {
   const r = repo.listRecipes().find((x) => x.spellId === row.spellId);
   if (!r) return false;
   const next = {
     ...r.imported,
+    profession: row.profession ?? r.imported.profession,
     requiredSkill: row.requiredSkill ?? r.imported.requiredSkill,
     learnedFrom: row.learnedFrom.length ? row.learnedFrom : r.imported.learnedFrom,
     skillRange: row.skillRange ?? r.imported.skillRange,
   };
-  const same = (k: 'requiredSkill' | 'learnedFrom' | 'skillRange') => JSON.stringify(next[k]) === JSON.stringify(r.imported[k]);
-  if (same('requiredSkill') && same('learnedFrom') && same('skillRange')) return false;
+  const same = (k: 'profession' | 'requiredSkill' | 'learnedFrom' | 'skillRange') => JSON.stringify(next[k]) === JSON.stringify(r.imported[k]);
+  if (same('profession') && same('requiredSkill') && same('learnedFrom') && same('skillRange')) return false;
   repo.saveRecipe({ ...r, imported: next, updatedAt: Date.now() });
   return true;
 }

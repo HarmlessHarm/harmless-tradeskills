@@ -904,14 +904,6 @@ th.r .sort-btn {
 .selection-bar {
   flex-wrap: wrap;
 }
-.bulk-edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding-right: 10px;
-  margin-right: 2px;
-  border-right: 1px solid var(--line);
-}
 /* Shift-click range selection should not also select page text. */
 .table .check {
   user-select: none;

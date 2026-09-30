@@ -12,36 +12,14 @@ const fetcher = async (url: string) => {
   return new Response(body);
 };
 
-describe('importer professions', () => {
-  it('tags pasted recipes, including ones already imported, and keeps the tag on refresh', async () => {
-    const repo = await freshRepo();
-    await importRecipe(repo, 2963, { fetcher });
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = fetcher as typeof fetch;
-    try {
-      const res = await bulkImport(repo, [{ type: 'spell', id: 2963 }], { force: false, profession: 'Tailoring' }, () => {});
-      expect(res.skipped).toBe(1);
-      expect(res.tagged).toBe(1);
-    } finally {
-      globalThis.fetch = origFetch;
-    }
-    const tagged = repo.listRecipes().find((r) => r.id === 'spell:2963')!;
-    expect(tagged.imported.profession).toBe('Tailoring');
-    expect(tagged.overrides).toEqual({});
-
-    await importRecipe(repo, 2963, { force: true, fetcher });
-    expect(repo.listRecipes().find((r) => r.id === 'spell:2963')!.imported.profession).toBe('Tailoring');
-  });
-});
-
 describe('importer learning info', () => {
-  it('stores pasted skill and source on recipes already imported, and keeps them on refresh', async () => {
+  it('stores pasted profession, skill and source on recipes already imported, and keeps them on refresh', async () => {
     const repo = await freshRepo();
     await importRecipe(repo, 2963, { fetcher });
     const row = { spellId: 2963, profession: 'Tailoring', requiredSkill: 1, learnedFrom: ['trainer' as const], skillRange: { orange: 1, yellow: 25, green: 37, grey: 50 } };
     const res = await bulkImport(repo, [{ type: 'spell', id: 2963 }], { force: false, recipeRows: [row], fetcher }, () => {});
     expect(res.learning).toBe(1);
-    const expected = { requiredSkill: 1, learnedFrom: ['trainer'], skillRange: row.skillRange };
+    const expected = { profession: 'Tailoring', requiredSkill: 1, learnedFrom: ['trainer'], skillRange: row.skillRange };
     expect(repo.listRecipes()[0].imported).toMatchObject(expected);
     expect(repo.listRecipes()[0].overrides).toEqual({});
 
