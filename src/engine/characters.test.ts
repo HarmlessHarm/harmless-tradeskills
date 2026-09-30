@@ -30,6 +30,12 @@ describe('skillColor', () => {
     expect(skillColor(r, 300)).toBe('grey');
     expect(skillColor(freeAction.skillRange, 160)).toBe('orange');
   });
+  it('skips tiers a recipe does not have', () => {
+    const twoTiers = { orange: 145, yellow: null, green: null, grey: 170 };
+    expect(skillColor(twoTiers, 144)).toBeNull();
+    expect(skillColor(twoTiers, 160)).toBe('orange');
+    expect(skillColor(twoTiers, 170)).toBe('grey');
+  });
   it('has no orange for a recipe that starts at yellow', () => {
     expect(skillColor(sulfuric.skillRange, 49)).toBeNull();
     expect(skillColor(sulfuric.skillRange, 50)).toBe('yellow');

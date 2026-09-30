@@ -34,5 +34,5 @@ export const SOURCE_LABELS: Record<RecipeSource, string> = {
 
 export const learnedFromText = (sources: RecipeSource[]) => sources.map((s) => SOURCE_LABELS[s]).join(', ');
 
-/** "25 / 65 / 85 / 105", orange first; a range without orange has three numbers. */
+/** "25 / 65 / 85 / 105", orange first; tiers the recipe does not have are left out. */
 export const skillRangeText = (r: SkillRange) => [r.orange, r.yellow, r.green, r.grey].filter((n) => n !== null).join(' / ');

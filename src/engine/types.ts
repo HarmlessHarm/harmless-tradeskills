@@ -62,15 +62,20 @@ export type RecipeKind = 'craft' | 'disenchant' | 'convert' | (string & {});
 export type RecipeSource = 'trainer' | 'vendor' | 'drop' | 'quest' | 'other';
 
 /**
- * The skill levels at which a recipe turns orange, yellow, green and grey. Some recipes have no
- * orange tier and are yellow from the start.
+ * The skill levels at which a recipe turns orange, yellow, green and grey. Not every recipe has all
+ * four: some start at yellow, and some show only two tiers. A missing tier is null.
  */
 export interface SkillRange {
   orange: number | null;
-  yellow: number;
-  green: number;
-  grey: number;
+  yellow: number | null;
+  green: number | null;
+  grey: number | null;
 }
+
+export const SKILL_TIERS = ['orange', 'yellow', 'green', 'grey'] as const;
+
+/** The level where the recipe's first tier starts, which is the skill needed to learn it. */
+export const firstTier = (r: SkillRange): number | null => SKILL_TIERS.map((t) => r[t]).find((n) => n !== null) ?? null;
 
 export interface RecipeFields {
   name: string;

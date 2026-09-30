@@ -8,7 +8,7 @@
  *
  * Be polite (NFR-4): callers fetch on demand only and cache the result in the database.
  */
-import type { ItemClass, ItemFields, Qty, Quality, RecipeFields, RecipeSource, SkillRange } from '../engine/types';
+import { firstTier, type ItemClass, type ItemFields, type Qty, type Quality, type RecipeFields, type RecipeSource, type SkillRange } from '../engine/types';
 import { PROFESSIONS } from '../professions';
 
 export type WowheadType = 'item' | 'spell';
@@ -121,14 +121,15 @@ export function parseRecipeSources(text: string): RecipeSource[] {
 
 /**
  * Skill levels from a recipe table's skill cell: spans r1 (orange), r2 (yellow), r3 (green) and
- * r4 (grey). A recipe without an orange tier has no r1. null unless yellow, green and grey are all there.
+ * r4 (grey). Each tier is read by its class, so a recipe without some tiers (no r1, or only two)
+ * gets null for those. null when the cell has none.
  */
 function parseSkillRange(html: string): SkillRange | null {
   const tier: Record<string, number> = {};
   const re = /<span\b[^>]*\bclass\s*=\s*["'][^"']*\br([1-4])\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>/gi;
   for (let m = re.exec(html); m; m = re.exec(html)) tier[m[1]] ??= Number(m[2]);
-  if (tier['2'] === undefined || tier['3'] === undefined || tier['4'] === undefined) return null;
-  return { orange: tier['1'] ?? null, yellow: tier['2'], green: tier['3'], grey: tier['4'] };
+  if (Object.keys(tier).length === 0) return null;
+  return { orange: tier['1'] ?? null, yellow: tier['2'] ?? null, green: tier['3'] ?? null, grey: tier['4'] ?? null };
 }
 
 /**
@@ -157,7 +158,7 @@ export function extractRecipeRows(html: string): PastedRecipeRow[] {
       spellId,
       profession: prof ? decodeEntities(prof[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() || null : null,
       // The required skill is where the recipe's first color starts, so that stands in when the text has none.
-      requiredSkill: required ? Number(required[1]) : (skillRange ? (skillRange.orange ?? skillRange.yellow) : null),
+      requiredSkill: required ? Number(required[1]) : (skillRange ? firstTier(skillRange) : null),
       learnedFrom: /^[a-z ,]+$/i.test(sourceText) ? parseRecipeSources(sourceText) : [],
       skillRange,
     });

@@ -1,6 +1,6 @@
 import type { SkillRange } from '../engine/types';
 
-/** A recipe's skill levels in their in-game colors, orange first. A range without orange has three. */
+/** A recipe's skill levels in their in-game colors, orange first. Tiers the recipe does not have are left out. */
 export function SkillLevels({ range }: { range: SkillRange }) {
   const tiers = [
     ['orange', range.orange],

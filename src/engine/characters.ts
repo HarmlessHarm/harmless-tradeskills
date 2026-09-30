@@ -1,4 +1,4 @@
-import type { Character, Recipe, SkillRange } from './types';
+import { SKILL_TIERS, type Character, type Recipe, type SkillRange } from './types';
 
 /**
  * What a character knows (#21). Until addon scans exist, a character knows a recipe when:
@@ -12,11 +12,8 @@ export type SkillColor = 'orange' | 'yellow' | 'green' | 'grey';
 /** The skill-up color of a recipe at a skill level; null below its first tier or without a range. */
 export function skillColor(range: SkillRange | null, skill: number): SkillColor | null {
   if (!range) return null;
-  if (skill >= range.grey) return 'grey';
-  if (skill >= range.green) return 'green';
-  if (skill >= range.yellow) return 'yellow';
-  if (range.orange !== null && skill >= range.orange) return 'orange';
-  return null;
+  // The highest tier that has started; tiers a recipe does not show are skipped.
+  return [...SKILL_TIERS].reverse().find((t) => range[t] !== null && skill >= range[t]) ?? null;
 }
 
 /**

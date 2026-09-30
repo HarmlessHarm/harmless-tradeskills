@@ -235,6 +235,15 @@ describe('extractRecipeRows', () => {
     expect(row(7836)?.skillRange).toEqual({ orange: 80, yellow: 80, green: 90, grey: 100 });
     expect(row(6624)?.skillRange).toEqual({ orange: 150, yellow: 175, green: 195, grey: 215 });
   });
+  it('reads a range with only some tiers, each by its color', () => {
+    const row = (spans: string) =>
+      `<tr><td><a href="/forever/spell=8760">Azure Silk Hood</a></td><td>Trainer</td><td><a href="/forever/spells=11.197">Tailoring</a> (145)<div>${spans}</div></td></tr>`;
+    expect(extractRecipeRows(row('<span class="r1">145</span> <span class="r4">145</span>'))[0]).toMatchObject({
+      requiredSkill: 145,
+      skillRange: { orange: 145, yellow: null, green: null, grey: 145 },
+    });
+    expect(extractRecipeRows(row('<span class="r1">145</span> <span class="r2">145</span>'))[0].skillRange).toEqual({ orange: 145, yellow: 145, green: null, grey: null });
+  });
   it('reads one or more sources', () => {
     expect(row(6624)?.learnedFrom).toEqual(['vendor']);
     expect(row(1230564)?.learnedFrom).toEqual(['quest', 'trainer']);

@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { effectiveRecipe } from '../engine/items';
-import type { Recipe, RecipeFields, RecipeOutput, RecipeRecord, RecipeSource } from '../engine/types';
+import { firstTier, type Recipe, type RecipeFields, type RecipeOutput, type RecipeRecord, type RecipeSource } from '../engine/types';
 import { learnedFromText, professionOptions, SOURCE_LABELS } from '../professions';
 import { SkillLevels } from './skill';
 import { setProfession } from '../state/actions';
@@ -453,15 +453,14 @@ function RecipeEditor({
               min={0}
               step={1}
               onChange={(v) => {
-                const base = rec.skillRange ?? { orange: null, yellow: 0, green: 0, grey: 0 };
-                const next = { ...base, [tier]: tier === 'orange' ? v : (v ?? 0) };
-                set('skillRange', next.orange === null && !next.yellow && !next.green && !next.grey ? null : next);
+                const next = { ...(rec.skillRange ?? { orange: null, yellow: null, green: null, grey: null }), [tier]: v };
+                set('skillRange', firstTier(next) === null ? null : next);
               }}
             />
           </label>
         ))}
       </div>
-      <p className="small muted">A recipe learned from a trainer counts as known by every character with enough skill. Leave orange empty when the recipe starts at yellow.</p>
+      <p className="small muted">A recipe learned from a trainer counts as known by every character with enough skill. Leave a color empty when the recipe does not show it on Wowhead.</p>
 
       <h3>Reagents</h3>
       <table className="form-table">
