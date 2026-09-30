@@ -254,6 +254,7 @@ input.short {
   margin: 8px 0;
 }
 .field-row label,
+.field-row .seg-field,
 .form-grid label {
   display: flex;
   flex-direction: column;
@@ -1043,6 +1044,51 @@ th.r .sort-btn {
 .row-icon.fav {
   color: var(--gold);
   font-size: 16px;
+  transition:
+    transform 0.12s ease-out,
+    color 0.12s ease-out;
+}
+/* One glyph at a time: outline when off, filled when on. Hovering an empty star previews it filled. */
+.row-icon.fav .star-on,
+.row-icon.fav.on .star-off {
+  display: none;
+}
+.row-icon.fav.on .star-on {
+  display: inline;
+}
+.row-icon.fav:not(.on):hover .star-off {
+  display: none;
+}
+.row-icon.fav:not(.on):hover .star-on {
+  display: inline;
+  opacity: 0.75;
+}
+.row-icon.fav:hover {
+  transform: scale(1.18);
+  color: #ffd36b;
+}
+/* An unstarred favorite waits, then fades out before it leaves the list (LEAVE_DELAY_MS, LEAVE_FADE_MS). */
+.watchlist tr.leaving > td {
+  transition: opacity 3s ease-in;
+}
+.watchlist tr.fading > td {
+  opacity: 0;
+}
+.leaving-note {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--warn);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-icon.fav {
+    transition: none;
+  }
+  .row-icon.fav:hover {
+    transform: none;
+  }
+  .watchlist tr.leaving > td {
+    transition: none;
+  }
 }
 .badge.wf {
   color: #b9a4ff;
@@ -1082,12 +1128,287 @@ th.r .sort-btn {
 .panel-actions label.inline {
   margin: 0;
 }
-.quick-calc {
-  padding: 12px 0 2px;
+/* Expanded watchlist row: calculator and prices side by side, stacked on narrow screens. */
+.row-detail {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(320px, 1.1fr);
+  gap: 20px;
+  padding: 12px 0 4px;
   /* Stay in view and wrap to the screen when the table scrolls sideways on narrow screens. */
   position: sticky;
   left: 0;
   max-width: calc(100vw - 110px);
+}
+/* Calculator and ledger on the left, prices on the right. */
+.row-detail {
+  grid-template-areas:
+    'calc prices'
+    'ledger prices';
+  align-items: start;
+}
+.row-detail .quick-calc {
+  grid-area: calc;
+}
+.row-detail .prices-card {
+  grid-area: prices;
+}
+.row-detail .ledger-card {
+  grid-area: ledger;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .row-detail {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'calc'
+      'prices'
+      'ledger';
+  }
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.card-head h4,
+.ledger-card h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.verdict-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.verdict-row .verdict {
+  margin: 0;
+}
+.quick-calc,
+.prices-card {
+  min-width: 0;
+}
+.prices-card {
+  border-left: 1px solid var(--line);
+  padding-left: 20px;
+}
+@media (max-width: 900px) {
+  .prices-card {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+}
+.prices-card h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.record-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+.record-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.record-form label > * {
+  color: var(--text);
+}
+.record-form label.grow {
+  flex: 1 1 160px;
+}
+.record-form .money-input {
+  width: 96px;
+}
+.record-form .num-input {
+  width: 72px;
+}
+.record-hint {
+  margin: 6px 0 10px;
+}
+.record-echo {
+  margin: 6px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.record-echo + .record-hint {
+  margin-top: 2px;
+}
+.obs-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.obs-stats > div {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.obs-stats dt {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.obs-stats dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.obs-stats .thin {
+  border-color: #5a4a1f;
+  background: rgba(240, 182, 74, 0.08);
+}
+.obs-stats .thin dd {
+  color: var(--warn);
+}
+
+/* Price chart. Marks use the validated chart hues; all text stays in text tokens. */
+.price-chart {
+  position: relative;
+  margin: 4px 0 6px;
+  --chart-surface: #1c212a;
+  --chart-price: #4a8fe0;
+  --chart-buy: #b88a1c;
+}
+.price-chart svg {
+  display: block;
+  overflow: visible;
+}
+.price-chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.price-chart .axis {
+  fill: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.price-chart .ref-typical line {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+.price-chart .ref-buy line {
+  stroke: var(--chart-buy);
+  stroke-width: 1.5;
+}
+.price-chart .dot {
+  stroke: var(--chart-surface);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+.price-chart .dot.solid {
+  fill: var(--chart-price);
+}
+.price-chart .dot.partial {
+  fill: var(--chart-surface);
+  stroke: var(--chart-price);
+  stroke-width: 2;
+}
+.price-chart .hit {
+  fill: transparent;
+  cursor: default;
+  outline: none;
+}
+.price-chart .hit:focus-visible {
+  stroke: var(--gold);
+  stroke-width: 1;
+}
+.chart-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 140px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.chart-tip strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.chart-key {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.key-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--chart-price);
+}
+.key-dot.solid {
+  background: var(--chart-price);
+}
+.key-dot.partial {
+  margin-left: 8px;
+}
+.obs-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 6px;
+}
+.editor-row .panel .obs-list th,
+.obs-list th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.obs-list th.r {
+  text-align: right;
+}
+.obs-list td {
+  padding: 3px 6px;
+  border-bottom: 1px solid rgba(44, 52, 65, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+.obs-list .row-icon {
+  width: 22px;
+  height: 22px;
+}
+.prices-card .hint {
+  margin-top: 8px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .calc-inputs {
   display: flex;
@@ -1096,14 +1417,16 @@ th.r .sort-btn {
   align-items: flex-end;
   margin-bottom: 12px;
 }
-.calc-inputs label {
+.calc-inputs label,
+.calc-inputs .seg-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
   color: var(--muted);
 }
-.calc-inputs label > * {
+.calc-inputs label > *,
+.calc-inputs .seg-field > .segmented {
   color: var(--text);
 }
 .verdict {
@@ -1151,4 +1474,120 @@ th.r .sort-btn {
 }
 .calc-kv dd {
   margin: 0;
+}
+@media (max-width: 600px) {
+  /* Let long values wrap under their label instead of squeezing into a narrow column. */
+  .calc-kv {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+  .calc-kv dd {
+    text-align: right;
+  }
+}
+.obs-list td:first-child {
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  /* Four stat tiles do not fit a phone: two per row. */
+  .obs-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Flip summary strip: portfolio at a glance above the watchlist. */
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+.summary-strip .stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat-value {
+  font-size: 17px;
+  font-weight: 700;
+}
+.stat-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.stat-sub.warn {
+  color: var(--warn);
+}
+.badge.below-floor {
+  display: block;
+  width: fit-content;
+  margin: 2px 0 0 auto;
+  color: var(--warn);
+  border-color: #5a4a1f;
+}
+.ledger-card .obs-stats {
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+.inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.badge.shared {
+  color: #b9a4ff;
+  border-color: #3d3560;
+  margin-left: 4px;
+}
+
+/* Settings > Data: one card per database, centred in the panel. */
+.data-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, 210px);
+  justify-content: center;
+  gap: 14px;
+  margin: 14px 0 10px;
+}
+.data-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 16px 14px 14px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.data-kind-icon {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+}
+.data-kind h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.data-kind p {
+  margin: 0 0 4px;
+  flex: 1;
+}
+.data-kind button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
 }

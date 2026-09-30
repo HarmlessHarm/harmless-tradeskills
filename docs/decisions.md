@@ -126,7 +126,7 @@
 ## DEC-21: Game data and personal data in separate databases
 - **Context**: The user wants to share item and recipe data with other players without handing over their workflows and flip favorites.
 - **Options considered**: (A) one database with a filtered "share" export; (B) two database files, each with its own migrations.
-- **Chosen**: B. `data` holds items, recipes and disenchant rules; `user` holds workflows, flip favorites, price observations and settings. Each file is tagged with a `PRAGMA application_id`, so an import is recognised and replaces only the database it holds.
+- **Chosen**: B. `data` holds items, recipes and disenchant rules; `user` holds workflows, flip favorites, price observations and settings (AH prices later moved to their own shareable database: DEC-23, DEC-27). Each file is tagged with a `PRAGMA application_id`, so an import is recognised and replaces only the database it holds.
 - **Why**: A shared file is then just the other player's game data export, with nothing to filter. Prices and settings stay personal: prices are observations of one player's market and go stale, and settings include personal time overheads.
 - **Migration**: The old combined file (no application_id) is brought up to date with the frozen legacy migrations, copied into both files and the other kind's tables dropped. This happens on first load and when importing an old export.
 - **Limitation**: Importing replaces; it does not merge someone else's game data into yours.
@@ -141,8 +141,8 @@
 - **Context**: The flipper needs more than one price per item: the AH holds hundreds of units per price level, from the cheap tail up to listings at silly prices (#19). Manual entry must stay quick, and addon scans (#14, #18) must fit the same history later. The user wants to share this price data with other players, without their personal data.
 - **Chosen**: A third database file, `prices` (application_id 'HTSP'), next to `data` and `user`, with its own migrations, IndexedDB key, export, import and clear. It holds `price_snapshots`: per item and moment the cheap end of the order book as (price, qty) rows, the total quantity when known, faction or neutral AH, a `source` (manual or addon), a `truncated` flag and a stable `uid` so a re-imported or shared snapshot is stored once. Min price, min quantity, market value and confidence are stored next to the rows and can be recomputed from them.
 - **Market value**: the quantity-weighted mean of the cheapest 15% of units, continued to 30% until the price steps up by more than 20%. Listings above that never count, which filters overpriced noise. It is 'solid' when the rows cover 15% of a known total, otherwise 'partial' (a few rows typed in by hand) and counts half in the typical price (weighted median over snapshots). Addon scans keep rows up to the cheapest half of units or twice the market value.
-- **Scope**: Only the flipper uses snapshots for now. Workflows keep `price_observations` in the personal database until they move over (planned with #14).
-- **Limitation**: Importing a prices file replaces the local one, like the other kinds. Merging someone else's snapshots into yours (using `uid`) is not built yet.
+- **Scope**: At first only the flipper used snapshots; since DEC-27 every AH price in the app is a snapshot.
+- **Limitation**: At first importing a prices file replaced the local one; since DEC-28 prices are added, never replaced.
 
 ## DEC-24: Flip watchlist instead of favorites chips and one form
 - **Context**: The flip page showed favorites as chips and one calculation at a time, which wastes space and hides comparisons (#19).
@@ -150,3 +150,28 @@
 - **Buy below**: the largest buy price per item that still makes the target margin on cost after the cut, any deposit spent on sale and one lost deposit (one expiry), for the row's quantity and listing mode. Conservative on purpose: manual prices are thin.
 - **Sell at** defaults to the typical price (market based), not cost plus markup.
 - **Deferred**: holdings and average cost columns come with the ledger (#19 step 5); entering snapshots from the page comes in step 4.
+
+## DEC-25: Manual price entry: a few numbers from the search result
+- **Context**: The AH shows hundreds of units per price level. Typing the whole book is not realistic, but a single price hides how deep the cheap end is (#19 step 4).
+- **Chosen**: One required field, the lowest price. Optional: the quantity at that price, the available count (both visible in the search result without opening the item), and more rows in a compact `qty x price` notation. A missing quantity at the lowest price counts as 1. The snapshot is truncated unless its rows add up to the available count; its market value is 'solid' once the rows cover 15% of the available count, otherwise 'partial' and it counts half in the typical price. Unreadable row text blocks saving and is named, never guessed.
+- **Chart**: lowest price per snapshot as dots over time (filled = solid, hollow = partial), with the typical price and "buy below" as labelled reference lines, hover or focus for the numbers; the list under it is the table view.
+
+## DEC-26: Manual flip ledger with moving-average cost, FIFO as a view
+- **Context**: #19 asks for a minimal ledger before addon data exists (first part of #16), and supersedes DEC-14's "calculator only" for flips.
+- **Chosen**: A `flip_transactions` table in the personal database (the ledger is personal, unlike prices). Each row: item, kind (buy, sell, adjust), signed qty for adjustments, unit price, fee (the AH cut on a sell, recorded when logged so a later cut change does not rewrite history), AH type, time, `source` (manual now, addon later) and a unique `uid` so imports can skip rows already logged. Holdings and profit are replayed from the rows, never stored.
+- **Cost basis**: weighted moving average by default (a buy moves the average; sells and removals do not). FIFO is a setting that replays the same rows: oldest units leave first, so remaining stock sits at the latest buy prices. Totals agree once everything is sold. Negative adjustments remove stock at cost without counting as profit; positive ones add stock at a given value (0 by default). Units sold beyond what was logged count at zero cost and are flagged.
+- **Unrealized** = holdings x typical price after the AH cut - cost of the holdings. Past purchase price is sunk: if the market dropped, this goes negative rather than hiding it.
+- **Not yet**: lost deposits of expired relists are not logged; the price floor warning and portfolio summary are step 6.
+
+## DEC-27: One AH price source: workflows and items read price snapshots
+- **Context**: After DEC-23 the app had two AH price stores: snapshots for flipping (prices database) and one current price per item in `price_observations` (personal database) for workflows and the Items page. The same item could show two prices, and workflow prices could not be shared (#19 step 7).
+- **Chosen**: Every AH price is a price snapshot, per item and AH type. Typing a price in the Items page or a workflow records a one-row manual snapshot. Workflows and the Items page get one price per item and AH from the snapshots by a rule in Settings: 'latest' (the newest snapshot's market value; the default, as before) or 'typical' (the typical price over all snapshots). Workflows now price on their own AH (faction or neutral); the Items page shows the faction AH. The price resolver (REQ-4.3) takes the AH type.
+- **Min AH price**: a worst-case assumption you set, not an observation, so it stays personal: an `ah_min_prices` table (one per item) in the personal database, filled from the latest old observations by a migration.
+- **Migration**: `price_observations` is emptied into snapshots and dropped by `Repo.moveLegacyPrices`, run whenever the databases are opened or replaced, so an imported old personal export converts too. Old prices become one-row manual snapshots on the faction AH (the old store had no AH type), with a uid from item, time and price, so moving the same old data twice adds nothing.
+- **Trade-off**: A price cannot be cleared from a cell any more; snapshots are history, so a newer one replaces it, and a wrong one is deleted from the flip watchlist's price list.
+
+## DEC-28: Import per kind; AH prices are added, never replaced
+- **Context**: One "Import" button replaced whatever kind of data the file held. For AH prices shared by another player that would wipe your own (#19 follow-up).
+- **Chosen**: One button per kind. **Import game data** and **Import personal data** replace, as before (restore a backup, move machines); a legacy combined file is accepted by either. **Add pricing data** merges: snapshots whose `uid` you already have are skipped, so your prices never change and adding the same file twice adds nothing. Each button checks the file's kind first and refuses a wrong one before asking anything.
+- **Who recorded a price**: Every snapshot stores an `owner`, a random player id kept in personal data (so restoring personal data restores it). Snapshots from before ids are claimed as yours on load. When adding, snapshots with your id come back as yours (restoring your own AH prices export); anyone else's are marked with `origin` (the file they came from, kept through re-sharing) and shown as "shared". **Remove added prices** deletes every snapshot with an origin; yours stay.
+- **Limits**: Clearing personal data without a backup creates a new player id, after which an old AH prices export of yours counts as shared. The id is random and says nothing about the player; it travels with shared prices files.

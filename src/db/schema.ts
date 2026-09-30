@@ -6,7 +6,7 @@
  * Data is split over three database files so game data and prices can be shared without personal
  * data (DEC-21, DEC-23):
  * - data: items, recipes and disenchant rules. Shareable with other players.
- * - user: workflows, flip favorites, price observations and settings.
+ * - user: workflows, flip favorites, the flip ledger, min AH prices and settings.
  * - prices: AH price snapshots. Shareable with other players on the same realm.
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
@@ -84,6 +84,33 @@ export const USER_MIGRATIONS: string[] = [
   // Pessimistic price renamed to min AH price. Old values are dropped, not carried over.
   `ALTER TABLE price_observations DROP COLUMN ah_pessimistic;
   ALTER TABLE price_observations ADD COLUMN ah_min INTEGER;`,
+  // Flip ledger (DEC-26). uid lets addon imports skip transactions logged by hand.
+  `CREATE TABLE flip_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    uid TEXT NOT NULL UNIQUE,
+    item_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    qty INTEGER NOT NULL,
+    unit_price INTEGER,
+    fee INTEGER NOT NULL DEFAULT 0,
+    ah_type TEXT NOT NULL DEFAULT 'faction',
+    occurred_at INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT ''
+  );
+  CREATE INDEX flip_tx_item ON flip_transactions (item_id, occurred_at);`,
+  // AH prices move to price snapshots in the prices database (DEC-27). The min AH price is a
+  // worst-case assumption, not an observation, so it stays here: the latest one per item.
+  // price_observations itself is emptied into snapshots and dropped by Repo.moveLegacyPrices.
+  `CREATE TABLE ah_min_prices (
+    item_id INTEGER PRIMARY KEY,
+    price INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  INSERT INTO ah_min_prices (item_id, price, updated_at)
+    SELECT p.item_id, p.ah_min, p.observed_at FROM price_observations p
+    JOIN (SELECT item_id, MAX(id) AS id FROM price_observations GROUP BY item_id) latest ON latest.id = p.id
+    WHERE p.ah_min IS NOT NULL;`,
 ];
 
 /**
@@ -111,6 +138,10 @@ export const PRICES_MIGRATIONS: string[] = [
   );
   CREATE INDEX price_snap_item ON price_snapshots (item_id, observed_at);
   `,
+  // Who recorded a snapshot (a random player id kept in personal data), and for another player's
+  // snapshots the file they were added from (DEC-28). Yours have no origin.
+  `ALTER TABLE price_snapshots ADD COLUMN owner TEXT;
+  ALTER TABLE price_snapshots ADD COLUMN origin TEXT;`,
 ];
 
 /** The kinds a legacy combined file is split into. Prices did not exist yet. */

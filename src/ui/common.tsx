@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react';
 import { anyItem } from '../engine/disenchant';
 import { formatMoney, parseMoney, splitMoney } from '../engine/money';
-import type { Copper, Item, PriceObservation } from '../engine/types';
+import type { Copper, Item } from '../engine/types';
 import { useStore } from '../state/store';
 import { importItem } from '../state/importer';
 import { iconUrl, wowheadUrl } from '../wowhead/adapter';
@@ -357,13 +357,16 @@ export function ago(ts: number | null | undefined): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
-/** Price age with a warning colour once it is a day old. */
-export function PriceAge({ obs }: { obs: PriceObservation | undefined }) {
-  if (!obs) return <span className="muted">no price</span>;
-  const old = Date.now() - obs.observedAt > 86_400_000;
+/** Price age with a warning colour once it is a day old; n is how many snapshots are behind the price. */
+export function PriceAge({ observedAt, n }: { observedAt: number | undefined; n?: number }) {
+  if (observedAt === undefined) return <span className="muted">no price</span>;
+  const old = Date.now() - observedAt > 86_400_000;
   return (
-    <span className={old ? 'stale' : 'muted'} title={new Date(obs.observedAt).toLocaleString()}>
-      {ago(obs.observedAt)}
+    <span
+      className={old ? 'stale' : 'muted'}
+      title={`${new Date(observedAt).toLocaleString()}${n !== undefined ? ` · ${n} price snapshot${n === 1 ? '' : 's'}` : ''}`}
+    >
+      {ago(observedAt)}
     </span>
   );
 }
@@ -396,17 +399,23 @@ export function Panel({ title, actions, children, className = '' }: { title?: Re
   );
 }
 
+/**
+ * A row of mutually exclusive buttons. Give it `label` instead of wrapping it in a <label>: a wrapping
+ * label names only the first button and clicking its text selects that button.
+ */
 export function Segmented<T extends string>({
   value,
   options,
   onChange,
+  label,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
+  label?: string;
 }) {
   return (
-    <div className="segmented" role="radiogroup">
+    <div className="segmented" role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} role="radio" aria-checked={o.value === value} className={o.value === value ? 'on' : ''} onClick={() => onChange(o.value)}>
           {o.label}

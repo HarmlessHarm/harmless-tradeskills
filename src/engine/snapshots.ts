@@ -1,4 +1,5 @@
-import type { AhType, Copper } from './types';
+import { parseMoney } from './money';
+import type { AhPrice, AhPriceRule, AhType, Copper } from './types';
 
 /**
  * AH price snapshots (DEC-23). A snapshot is the cheap end of the order book for one item at one
@@ -32,6 +33,13 @@ export interface PriceSnapshot {
   levels: PriceLevel[];
   /** True when `levels` does not hold the whole book (manual entry, or a trimmed scan). */
   truncated: boolean;
+  /**
+   * Random id of the player who recorded it (DEC-28). Left out when saving means "me"; null means
+   * unknown (another player's snapshot from before ids).
+   */
+  owner?: string | null;
+  /** Where a snapshot added from another player's file came from (its file name). Absent for your own (DEC-28). */
+  origin?: string;
 }
 
 export interface SnapshotSummary {
@@ -185,4 +193,86 @@ export function weightedMedian(values: { value: number; weight: number }[]): num
     if (Math.abs(acc - total / 2) < 1e-9) return Math.round((rows[i].value + rows[i + 1].value) / 2);
   }
   return rows[rows.length - 1].value;
+}
+
+/**
+ * Reads order book rows typed by hand: "100x56c 450x58c", "20 x 1g 5s, 3@2g". Each row is a quantity,
+ * an `x` (or `@`, `*`, `×`) and a price in money notation (a bare number is copper). Rows are separated
+ * by spaces, commas, semicolons or new lines. Anything that is not a row is reported, not guessed.
+ */
+export function parseLevels(text: string): { levels: PriceLevel[]; errors: string[] } {
+  const row = /(\d+)\s*[x×@*]\s*((?:\d+\s*[gsc](?![a-z])\s*)+|\d+(?!\d))/gi;
+  const levels: PriceLevel[] = [];
+  const errors: string[] = [];
+  let last = 0;
+  const leftover = (s: string) => {
+    const junk = s.replace(/[\s,;]+/g, ' ').trim();
+    if (junk) errors.push(`Not a row: "${junk}"`);
+  };
+  for (const m of text.matchAll(row)) {
+    leftover(text.slice(last, m.index));
+    last = m.index + m[0].length;
+    const qty = Number(m[1]);
+    const price = parseMoney(m[2]);
+    if (price === null || qty <= 0) errors.push(`Not a row: "${m[0].trim()}"`);
+    else levels.push({ price, qty });
+  }
+  leftover(text.slice(last));
+  return { levels, errors };
+}
+
+export interface ManualSnapshotInput {
+  itemId: number;
+  ahType: AhType;
+  /** Cheapest price shown, per item. */
+  lowest: Copper;
+  /** Units at the cheapest price; unknown counts as 1. */
+  lowestQty: number | null;
+  /** Units on the AH (the search result's available count). */
+  totalQty: number | null;
+  /** More rows typed in, see `parseLevels`. */
+  more: PriceLevel[];
+  observedAt: number;
+  uid?: string;
+}
+
+/** A snapshot from prices typed in by hand. It is truncated unless its rows add up to the total. */
+export function manualSnapshot(input: ManualSnapshotInput): PriceSnapshot {
+  const levels = normalizeLevels([{ price: input.lowest, qty: Math.max(1, input.lowestQty ?? 1) }, ...input.more]);
+  const units = unitsIn(levels);
+  const totalQty = input.totalQty !== null && input.totalQty > 0 ? Math.max(input.totalQty, units) : null;
+  return {
+    uid: input.uid ?? `manual-${crypto.randomUUID()}`,
+    itemId: input.itemId,
+    observedAt: input.observedAt,
+    ahType: input.ahType,
+    source: 'manual',
+    totalQty,
+    levels,
+    truncated: totalQty === null || units < totalQty,
+  };
+}
+
+/**
+ * One AH price per item and AH type for workflows and the Items page (DEC-27). 'latest': the newest
+ * snapshot's market value (its lowest price when there is none). 'typical': the typical price over
+ * all snapshots (`priceStats`), falling back to 'latest'.
+ */
+export function currentAhPrices(snapshots: PriceSnapshot[], rule: AhPriceRule): AhPrice[] {
+  const groups = new Map<string, PriceSnapshot[]>();
+  for (const s of snapshots) {
+    const key = `${s.itemId}:${s.ahType}`;
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  const out: AhPrice[] = [];
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => a.observedAt - b.observedAt);
+    const newest = sorted[sorted.length - 1];
+    const sum = summarize(newest);
+    const latest = sum.marketValue ?? sum.minPrice;
+    const price = rule === 'typical' ? (priceStats(sorted).typical ?? latest) : latest;
+    if (price === null) continue;
+    out.push({ itemId: newest.itemId, ahType: newest.ahType, price, observedAt: newest.observedAt, n: sorted.length });
+  }
+  return out;
 }

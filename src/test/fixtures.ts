@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG } from '../config';
 import type { EngineData } from '../engine/workflow';
-import type { DisenchantRule, Item, PriceObservation, Recipe, Workflow } from '../engine/types';
+import { ahKey } from '../engine/prices';
+import type { AhType, Copper, DisenchantRule, Item, Recipe, Workflow } from '../engine/types';
 
 /** The PRD's "DE shuffle". Prices here are made up for tests. */
 export const IDS = {
@@ -81,13 +82,18 @@ export const deRules: DisenchantRule[] = [
   },
 ];
 
-export const prices: PriceObservation[] = [{ itemId: IDS.linen, ahPrice: 15, ahMin: null, observedAt: 0 }];
+/** Sets the current AH price (and optionally the min AH price) of an item in engine data. */
+export function setAhPrice(d: EngineData, itemId: number, price: Copper, ahMin: Copper | null = null, ahType: AhType = 'faction'): void {
+  d.ahPrices.set(ahKey(itemId, ahType), { itemId, ahType, price, observedAt: 0, n: 1 });
+  if (ahMin !== null) d.ahMins.set(itemId, ahMin);
+}
 
 export function engineData(overrides: Partial<EngineData> = {}): EngineData {
   return {
     items: new Map(items.map((i) => [i.id, i])),
     recipes: new Map(recipes.map((r) => [r.id, r])),
-    prices: new Map(prices.map((p) => [p.itemId, p])),
+    ahPrices: new Map([[ahKey(IDS.linen, 'faction'), { itemId: IDS.linen, ahType: 'faction', price: 15, observedAt: 0, n: 1 }]]),
+    ahMins: new Map(),
     deRules,
     config: { ...DEFAULT_CONFIG, perActionOverheadSec: 0, perBatchOverheadSec: 60, simulationRuns: 4000 },
     ...overrides,

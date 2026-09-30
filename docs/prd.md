@@ -49,8 +49,8 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-3.1**: Manually maintained rule table keyed on quality, item level range and armor vs weapon, mapping to outputs with chance and min/max quantity.
   - **REQ-3.2**: A disenchant recipe is derived for any item matching a rule, so a workflow step can be "disenchant item X".
 - **REQ-4** (MUST): Prices.
-  - **REQ-4.1**: Manual price entry per item for AH price, with timestamp so staleness is visible. Vendor buy/sell prices come from REQ-1.
-  - **REQ-4.2** (SHOULD): Optional min AH price per item, used for worst-case figures. [ref: DEC-10]
+  - **REQ-4.1**: AH prices are price snapshots per item and AH (faction or neutral), recorded by hand from the Items page, a workflow or the flip watchlist, with timestamps so staleness is visible. Workflows and the Items page use one price per item and AH, by a rule in Settings: the latest snapshot or the typical price. Vendor buy/sell prices come from REQ-1. [ref: DEC-23, DEC-27]
+  - **REQ-4.2** (SHOULD): Optional min AH price per item, set by hand and used for worst-case figures. [ref: DEC-10, DEC-27]
   - **REQ-4.3**: All price lookups go through one resolver function so modifiers (e.g. reputation) can be added later. Stored vendor prices are always base prices. [ref: DEC-8]
 - **REQ-5** (MUST): AH fee model as a reusable sell channel. [ref: DEC-13]
   - **REQ-5.1**: Cut on sale, deposit per listing duration, faction vs neutral AH; rates in configuration, not code.
@@ -66,12 +66,15 @@ A personal, data-driven calculator for WoW Forever professions. Items and recipe
   - **REQ-6.6**: Show time per unit as cast time x runs per unit plus a configurable per-action overhead, and time per batch including a configurable per-batch overhead; show gold/hour for the batch. [ref: DEC-12]
   - **REQ-6.7** (MAY): Show leftover items from a simulated batch. [ref: DEC-11]
   - **REQ-6.8** (SHOULD): A step can disenchant any item of a quality, armor vs weapon and item level band. Its item is not priced; instead the workflow shows the most to pay per item: break-even, safe (worst case breaks even) and for a target gold per hour. [ref: DEC-20]
-- **REQ-7** (MUST): AH flip watchlist with a calculator per item. Flips themselves are not tracked yet (ledger, #16). [ref: DEC-13, DEC-24]
+- **REQ-7** (MUST): AH flip watchlist with a calculator per item. Flips are tracked in a manual ledger (first part of #16). [ref: DEC-13, DEC-24, DEC-26]
   - **REQ-7.1**: Inputs: buy and expected sell price per item, quantity, listing duration, faction or neutral AH, and the item (its vendor sell price sets the deposit, its class sets whether the quantity is posted as one lot or per piece, REQ-5.3).
   - **REQ-7.2**: Outputs: profit per item and for the whole quantity if it sells on the first listing, cost per failed listing (the deposit for posting the quantity once), and the number of relists until the flip breaks even.
   - **REQ-7.3**: Settings are remembered per item: buy price, sell price, quantity, duration and AH type. Starred items are favorites.
   - **REQ-7.4**: One sortable watchlist table instead of a single form: favorites plus every item a workflow buys or sells on the AH. Columns: last seen low (and when), typical price with the number of snapshots n, buy below, sell at (the saved sell price, else the typical price), margin per item and % of cost when buying at the last low, and relists until break-even. Clicking a row opens the calculator inline.
   - **REQ-7.5**: "Buy below" is the most to pay per item for a target margin on cost (a setting, default 15%) after the AH cut, any deposit spent on sale, and one lost deposit. A last seen low at or under it is highlighted.
+  - **REQ-7.6**: Record AH prices from an expanded row: the lowest price (required), its quantity and the available count from the search result, and optionally more rows typed as `450x58c 900x61c`. Each save is a manual price snapshot (DEC-23) for the row's AH type. The row shows last low, min, typical and n, a chart of the lowest price over time against the typical price and "buy below", and the recent snapshots with delete.
+  - **REQ-7.7**: Manual ledger per item: log buys (qty, price paid), sells (qty, price sold; the AH cut is recorded as a fee) and adjustments (negative for stock used, vendored or destroyed; positive for stock got another way). Shows holdings, cost basis (weighted moving average by default, FIFO as an option), realized profit per sale and unrealized profit (holdings at the typical price after the cut, minus cost). Items with holdings stay on the watchlist; the table has a Holding column and filter. [ref: DEC-26]
+  - **REQ-7.8**: Price floor for stock you hold: the lowest sell price that gets back the average cost after the AH cut, any deposit spent on sale and one lost deposit. Shown in the ledger and calculator; a planned sell price under it is flagged in the Holding column, the calculator and the ledger, which says the market is under what you paid instead of hiding it. A summary strip above the watchlist shows items watched and held, stock at cost (and how many are below their floor), unrealized profit, and realized profit over 30 days and all time.
 
 ## Non-functional requirements
 - **NFR-1** (MUST): Single-user personal tool.

@@ -1,22 +1,27 @@
 import type { Database } from 'sql.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { openBrowserDbs, openDbsFromBytes, openFreshDbs, persist, persister } from '../db/browser';
+import { openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
 import { type DbKind, type Dbs, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
-import type { Config, DisenchantRule, FlipFavorite, ItemRecord, PriceObservation, RecipeRecord, Workflow } from '../engine/types';
-import type { PriceSnapshot } from '../engine/snapshots';
+import type { Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
+import type { Transaction } from '../engine/ledger';
+import { ahKey } from '../engine/prices';
+import { currentAhPrices, type PriceSnapshot } from '../engine/snapshots';
 import type { EngineData } from '../engine/workflow';
 
 export interface Snapshot {
   itemRecords: ItemRecord[];
   recipeRecords: RecipeRecord[];
   deRules: DisenchantRule[];
-  prices: PriceObservation[];
+  /** Min AH prices you set per item (REQ-4.2). */
+  ahMins: Map<number, Copper>;
   workflows: Workflow[];
   config: Config;
   flipFavorites: FlipFavorite[];
   /** AH price snapshots from the prices database (DEC-23), oldest first. */
   priceSnapshots: PriceSnapshot[];
+  /** Flip ledger, oldest first (DEC-26). */
+  transactions: Transaction[];
 }
 
 interface StoreValue extends Snapshot {
@@ -28,7 +33,9 @@ interface StoreValue extends Snapshot {
   mutateAsync: <T>(fn: (repo: Repo) => Promise<T>) => Promise<T>;
   exportDb: (kind: DbKind) => Uint8Array;
   /** Replaces the database(s) the file holds and returns which were replaced. */
-  importDb: (bytes: Uint8Array) => Promise<DbKind[]>;
+  importDb: (bytes: Uint8Array, kind: 'data' | 'user') => Promise<DbKind[]>;
+  /** Adds the AH prices of another player's file to yours; yours are never replaced (DEC-28). */
+  addPrices: (bytes: Uint8Array, fileName: string) => Promise<{ added: number; skipped: number }>;
   /** Replaces the given databases with empty ones. */
   clearDb: (kinds: DbKind[]) => Promise<void>;
 }
@@ -40,11 +47,12 @@ function readSnapshot(repo: Repo): Snapshot {
     itemRecords: repo.listItems(),
     recipeRecords: repo.listRecipes(),
     deRules: repo.listDeRules(),
-    prices: repo.latestPrices(),
+    ahMins: repo.listAhMins(),
     workflows: repo.listWorkflows(),
     config: repo.getConfig(),
     flipFavorites: repo.listFlipFavorites(),
     priceSnapshots: repo.listSnapshots(),
+    transactions: repo.listTransactions(),
   };
 }
 
@@ -68,6 +76,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (dbs: Dbs) => {
       dbsRef.current = dbs;
       const r = new Repo(dbs, (kind) => savers[kind].schedule());
+      // Old personal data (a first load after the update, or an imported old export) still has AH
+      // prices in its own table: move them into price snapshots (DEC-27).
+      r.moveLegacyPrices();
+      // Prices recorded before player ids are yours (DEC-28).
+      r.claimUnownedSnapshots();
       setRepo(r);
       setSnap(readSnapshot(r));
     },
@@ -106,7 +119,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const engine: EngineData = {
       items: new Map(snap.itemRecords.map((r) => [r.id, effectiveItem(r)])),
       recipes: new Map(snap.recipeRecords.map((r) => [r.id, effectiveRecipe(r)])),
-      prices: new Map(snap.prices.map((p) => [p.itemId, p])),
+      ahPrices: new Map(currentAhPrices(snap.priceSnapshots, snap.config.ahPriceRule).map((p) => [ahKey(p.itemId, p.ahType), p])),
+      ahMins: snap.ahMins,
       deRules: snap.deRules,
       config: snap.config,
     };
@@ -129,7 +143,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       },
       exportDb: (kind) => repo[kind].export(),
-      importDb: async (bytes) => replace(await openDbsFromBytes(bytes)),
+      importDb: async (bytes, kind) => replace(await openDbsFromBytes(bytes, kind)),
+      addPrices: async (bytes, fileName) => {
+        const file = await openPricesFile(bytes);
+        try {
+          return repo.addSnapshotsFrom(file, fileName);
+        } finally {
+          file.close();
+          refresh();
+        }
+      },
       clearDb: async (kinds) => void (await replace(await openFreshDbs(kinds))),
     };
   }, [repo, snap, attach]);

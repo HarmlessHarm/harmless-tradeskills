@@ -4,6 +4,7 @@ import { expectedQty } from './items';
 import { price, type PriceContext } from './prices';
 import { mulberry32, percentile, randInt } from './random';
 import type {
+  AhType,
   BuySource,
   Config,
   Copper,
@@ -276,8 +277,8 @@ function defaultBuySource(data: EngineData, itemId: number): BuySource {
   return price(data, itemId, 'vendor-buy') !== null ? 'vendor' : 'ah';
 }
 
-function defaultDisposition(data: EngineData, itemId: number): Disposition {
-  return price(data, itemId, 'ah') !== null ? 'ah' : 'vendor';
+function defaultDisposition(data: EngineData, itemId: number, ahType: AhType): Disposition {
+  return price(data, itemId, 'ah', ahType) !== null ? 'ah' : 'vendor';
 }
 
 export function buySourceFor(data: EngineData, wf: Workflow, itemId: number): BuySource {
@@ -285,11 +286,11 @@ export function buySourceFor(data: EngineData, wf: Workflow, itemId: number): Bu
 }
 
 export function dispositionFor(data: EngineData, wf: Workflow, itemId: number): Disposition {
-  return wf.sellMap[itemId] ?? defaultDisposition(data, itemId);
+  return wf.sellMap[itemId] ?? defaultDisposition(data, itemId, wf.ahType);
 }
 
-function buyPrice(data: EngineData, itemId: number, source: BuySource): Copper | null {
-  return price(data, itemId, source === 'vendor' ? 'vendor-buy' : 'ah');
+function buyPrice(data: EngineData, itemId: number, source: BuySource, ahType: AhType): Copper | null {
+  return price(data, itemId, source === 'vendor' ? 'vendor-buy' : 'ah', ahType);
 }
 
 function saleValue(
@@ -301,7 +302,7 @@ function saleValue(
 ): Copper | null {
   if (disposition === 'keep') return 0;
   if (disposition === 'vendor') return price(data, itemId, 'vendor-sell');
-  const p = price(data, itemId, minPrices ? 'ah-min' : 'ah');
+  const p = price(data, itemId, minPrices ? 'ah-min' : 'ah', wf.ahType);
   return p === null ? null : netOnSale(data.config, p, wf.ahType);
 }
 
@@ -391,7 +392,7 @@ export function analyzeWorkflow(data: EngineData, wf: Workflow, opts: AnalyzeOpt
       continue;
     }
     const source = buySourceFor(data, wf, itemId);
-    const unitPrice = buyPrice(data, itemId, source);
+    const unitPrice = buyPrice(data, itemId, source, wf.ahType);
     if (unitPrice === null) noteMissing(itemId, source === 'vendor' ? 'vendor buy price' : 'ah price');
     externalInputs.push({
       itemId,

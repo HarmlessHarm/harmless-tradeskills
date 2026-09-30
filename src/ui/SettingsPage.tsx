@@ -1,19 +1,28 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_CONFIG } from '../config';
 import type { DbKind } from '../db/repo';
-import type { AhDuration, Config, ItemClass } from '../engine/types';
+import type { AhDuration, AhPriceRule, Config, ItemClass } from '../engine/types';
+import { checkFileKind } from '../db/browser';
 import { refreshStale } from '../state/importer';
 import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { DisenchantPage } from './DisenchantPage';
+import { Icon, type IconName } from './icons';
 
 const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal', prices: 'prices' };
 const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
 const KIND_CONTENTS: Record<DbKind, string> = {
   data: 'items, recipes, disenchant rules',
-  user: 'workflows, workflow prices, flip favorites, settings',
-  prices: 'AH price snapshots',
+  user: 'workflows, flip favorites and ledger, min AH prices, settings',
+  prices: 'AH price snapshots for workflows, items and flips',
 };
+
+/** The three databases on the Data page, in this order (DEC-21, DEC-23, DEC-28). */
+const DATA_CARDS: { kind: DbKind; icon: IconName; title: string; noun: string; holds: string }[] = [
+  { kind: 'user', icon: 'person', title: 'Personal data', noun: 'personal data', holds: 'Workflows, flip favorites and ledger, min AH prices, settings. Yours only.' },
+  { kind: 'prices', icon: 'coins', title: 'AH prices', noun: 'AH prices', holds: 'Every AH price you record. Share with players on your realm.' },
+  { kind: 'data', icon: 'book', title: 'Game data', noun: 'game data', holds: 'Items, recipes, disenchant rules. Share with anyone.' },
+];
 
 /** "a", "a and b", "a, b and c". */
 const listText = (parts: string[]) => (parts.length < 2 ? parts.join('') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`);
@@ -36,7 +45,7 @@ const AH_DEFAULTS: Partial<Config> = {
 };
 
 const SECTIONS = [
-  { key: 'general', label: 'General', sub: 'Auction house, time', Section: GeneralSettings },
+  { key: 'general', label: 'General', sub: 'Auction house, prices, time', Section: GeneralSettings },
   { key: 'data', label: 'Data', sub: 'Wowhead, backups', Section: DataSettings },
   { key: 'disenchant', label: 'Disenchant rules', sub: 'Seeded, rarely edited', Section: DisenchantPage },
 ] as const;
@@ -175,6 +184,25 @@ function GeneralSettings() {
         </p>
       </Panel>
 
+      <Panel title="AH prices">
+        <div className="inline-field">
+          <span>Workflows and items use</span>
+          <Segmented<AhPriceRule>
+            label="Workflows and items use"
+            value={config.ahPriceRule}
+            options={[
+              { value: 'latest', label: 'Latest price' },
+              { value: 'typical', label: 'Typical price' },
+            ]}
+            onChange={(v) => save({ ahPriceRule: v })}
+          />
+        </div>
+        <p className="small muted">
+          Every AH price you record is a price snapshot, per faction or neutral AH. <b>Latest</b> uses the newest one (its market value): what you just saw.{' '}
+          <b>Typical</b> uses the typical price over all of them, so one odd low or high does not swing a workflow. The min AH price stays a number you set.
+        </p>
+      </Panel>
+
       <Panel title="Time and simulation">
         <div className="form-grid">
           <label>
@@ -205,8 +233,39 @@ function GeneralSettings() {
 }
 
 function DataSettings() {
-  const { mutateAsync, exportDb, importDb, clearDb } = useStore();
+  const { mutate, mutateAsync, exportDb, importDb, addPrices, clearDb } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
+  /** What the file picker is for: replace game or personal data, or add AH prices. */
+  const importMode = useRef<'data' | 'user' | 'addPrices'>('data');
+  const pick = (mode: typeof importMode.current) => {
+    importMode.current = mode;
+    fileRef.current?.click();
+  };
+  const onFile = async (file: File) => {
+    const mode = importMode.current;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      if (mode === 'addPrices') {
+        const { added, skipped } = await addPrices(bytes, file.name);
+        setDataMsg(
+          `Added ${added} AH price${added === 1 ? '' : 's'} from ${file.name}${skipped ? ` (${skipped} you already had)` : ''}. Your own prices are unchanged.`,
+        );
+        return;
+      }
+      await checkFileKind(bytes, mode);
+      const what = mode === 'data' ? 'game data (items, recipes, disenchant rules)' : 'personal data (workflows, flip favorites and ledger, min AH prices, settings)';
+      if (!confirm(`Replace the ${what} in this browser with ${file.name}? Export first if you want a backup.`)) return;
+      const kinds = await importDb(bytes, mode);
+      setDataMsg(`Imported ${listText(kinds.map((k) => KIND_LABEL[k]))} from ${file.name}.`);
+    } catch (err) {
+      setDataMsg(`Import failed: ${errorText(err)}`);
+    }
+  };
+  const removeAdded = () => {
+    if (!confirm('Remove every AH price you added from other players? Your own prices stay.')) return;
+    const n = mutate((repo) => repo.removeAddedSnapshots());
+    setClearMsg(`Removed ${n} added AH price${n === 1 ? '' : 's'}.`);
+  };
   const [dataMsg, setDataMsg] = useState<string | null>(null);
   const [days, setDays] = useState<number | null>(30);
   const [progress, setProgress] = useState<string | null>(null);
@@ -261,36 +320,43 @@ function DataSettings() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as three SQLite databases. <b>Game data</b> (items, recipes, disenchant rules)
-          can be shared with other players. <b>AH prices</b> (price snapshots for flipping) can be shared with players on your
-          realm. <b>Personal data</b> (workflows, workflow prices, flip favorites, settings) is yours. Export all three for backups
-          or to move to another machine. Importing a file replaces only the data it holds.
+          Everything is stored in this browser as three SQLite databases. Export all three for backups or to move to another machine.
         </p>
-        <div className="add-row">
-          <button onClick={() => download('data')}>Export game data</button>
-          <button onClick={() => download('prices')}>Export AH prices</button>
-          <button onClick={() => download('user')}>Export personal data</button>
-          <button onClick={() => fileRef.current?.click()}>Import .sqlite</button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".sqlite,.db,application/vnd.sqlite3,application/x-sqlite3"
-            hidden
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (!file) return;
-              if (!confirm('Replace the data in this browser with the data in the imported file?')) return;
-              try {
-                const kinds = await importDb(new Uint8Array(await file.arrayBuffer()));
-                setDataMsg(`Imported ${listText(kinds.map((k) => KIND_LABEL[k]))} from ${file.name}.`);
-              } catch (err) {
-                setDataMsg(`Import failed: ${errorText(err)}`);
-              }
-            }}
-          />
-          {dataMsg && <span className="small muted">{dataMsg}</span>}
+        <div className="data-kinds">
+          {DATA_CARDS.map((c) => (
+            <section key={c.kind} className="data-kind" aria-labelledby={`data-kind-${c.kind}`}>
+              <span className="data-kind-icon">
+                <Icon name={c.icon} size={32} />
+              </span>
+              <h3 id={`data-kind-${c.kind}`}>{c.title}</h3>
+              <p className="small muted">{c.holds}</p>
+              <button onClick={() => download(c.kind)}>
+                <Icon name="download" /> Export {c.noun}
+              </button>
+              <button onClick={() => pick(c.kind === 'prices' ? 'addPrices' : c.kind)}>
+                <Icon name={c.kind === 'prices' ? 'plus' : 'upload'} /> {c.kind === 'prices' ? 'Add pricing data' : `Import ${c.noun}`}
+              </button>
+            </section>
+          ))}
         </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".sqlite,.db,application/vnd.sqlite3,application/x-sqlite3"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) void onFile(file);
+          }}
+        />
+        {dataMsg && <p className="small muted">{dataMsg}</p>}
+        <p className="small muted">
+          <b>Import</b> game or personal data replaces what this browser has: use it to restore a backup or move machines.{' '}
+          <b>Add pricing data</b> adds another player's AH prices to yours: none of your prices is replaced, prices you already have are skipped
+          (adding the same file twice adds nothing), and other players' prices are marked as shared. It also restores your own AH prices
+          export: those come back as yours. Each button only takes its own kind of file.
+        </p>
       </Panel>
 
       <Panel title="Danger zone" className="danger-zone">
@@ -299,6 +365,7 @@ function DataSettings() {
         </p>
         <div className="add-row">
           <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+          <button className="danger" onClick={removeAdded}>Remove added prices</button>
           <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
           <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
           <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>

@@ -101,13 +101,22 @@ export interface DisenchantRule {
   notes: string;
 }
 
-export interface PriceObservation {
+/**
+ * The AH price workflows use for an item on one AH (REQ-4.1, DEC-27): derived from the price
+ * snapshots by the rule in Settings.
+ */
+export interface AhPrice {
   itemId: number;
-  ahPrice: Copper | null;
-  /** Optional min AH sell price, used for the worst case (REQ-4.2). */
-  ahMin: Copper | null;
+  ahType: AhType;
+  price: Copper;
+  /** When the newest snapshot behind it was taken. */
   observedAt: number;
+  /** Snapshots behind it. */
+  n: number;
 }
+
+/** How workflows turn snapshots into one AH price: the newest snapshot, or the typical price. */
+export type AhPriceRule = 'latest' | 'typical';
 
 export type AhType = 'faction' | 'neutral';
 export type BuySource = 'ah' | 'vendor';
@@ -167,6 +176,10 @@ export interface Config {
   ahRulesVerifiedAt: number | null;
   /** Profit wanted on a flip, as a fraction of the buy price. Sets the watchlist's "buy below". */
   flipTargetMargin: number;
+  /** How the flip ledger values stock and sales (DEC-26). */
+  ledgerCostMethod: 'average' | 'fifo';
+  /** How workflows and the Items page price items from AH snapshots (DEC-27). */
+  ahPriceRule: AhPriceRule;
   /** Seconds of idle time added to every action (cast). */
   perActionOverheadSec: number;
   /** Seconds added once per batch (vendor walks, buying, posting). */

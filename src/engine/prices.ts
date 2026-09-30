@@ -1,25 +1,28 @@
-import type { Copper, Item, PriceObservation } from './types';
+import type { AhPrice, AhType, Copper, Item } from './types';
 
 export type PriceChannel = 'ah' | 'ah-min' | 'vendor-buy' | 'vendor-sell';
 
 export interface PriceContext {
   items: Map<number, Item>;
-  prices: Map<number, PriceObservation>;
+  /** Current AH price per item and AH type, keyed by `ahKey` (DEC-27). */
+  ahPrices: Map<string, AhPrice>;
+  /** Min AH price per item: a worst-case assumption you set, not an observation (REQ-4.2). */
+  ahMins: Map<number, Copper>;
 }
+
+export const ahKey = (itemId: number, ahType: AhType) => `${itemId}:${ahType}`;
 
 /**
  * The single entry point for every price lookup (REQ-4.3, DEC-8).
  * Stored vendor prices are base prices; modifiers such as reputation discounts belong here later.
- * Returns null when the price is unknown.
+ * AH prices are per AH type. Returns null when the price is unknown.
  */
-export function price(ctx: PriceContext, itemId: number, channel: PriceChannel): Copper | null {
+export function price(ctx: PriceContext, itemId: number, channel: PriceChannel, ahType: AhType = 'faction'): Copper | null {
   switch (channel) {
     case 'ah':
-      return ctx.prices.get(itemId)?.ahPrice ?? null;
-    case 'ah-min': {
-      const obs = ctx.prices.get(itemId);
-      return obs?.ahMin ?? obs?.ahPrice ?? null;
-    }
+      return ctx.ahPrices.get(ahKey(itemId, ahType))?.price ?? null;
+    case 'ah-min':
+      return ctx.ahMins.get(itemId) ?? price(ctx, itemId, 'ah', ahType);
     case 'vendor-buy':
       return ctx.items.get(itemId)?.vendorBuy ?? null;
     case 'vendor-sell':
