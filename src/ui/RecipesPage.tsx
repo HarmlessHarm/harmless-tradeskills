@@ -1,7 +1,8 @@
 import { Fragment, useState } from 'react';
 import { effectiveRecipe } from '../engine/items';
-import type { Recipe, RecipeFields, RecipeOutput, RecipeRecord } from '../engine/types';
-import { professionOptions } from '../professions';
+import { firstTier, type Recipe, type RecipeFields, type RecipeOutput, type RecipeRecord, type RecipeSource } from '../engine/types';
+import { learnedFromText, professionOptions, SOURCE_LABELS } from '../professions';
+import { SkillLevels } from './skill';
 import { setProfession } from '../state/actions';
 import { importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
@@ -17,7 +18,7 @@ import { SortHeader, sortRows, useSort, type SortValue } from './sorting';
 const KINDS = ['craft', 'disenchant', 'convert'];
 const ALL = '__all';
 const NONE = '__none';
-type RecipeSortKey = 'name' | 'profession' | 'kind' | 'cast' | 'ilvl';
+type RecipeSortKey = 'name' | 'profession' | 'kind' | 'cast' | 'ilvl' | 'learned' | 'skill';
 
 export function RecipesPage() {
   const { recipeRecords, mutate, engine, workflows, deRules } = useStore();
@@ -65,6 +66,10 @@ export function RecipesPage() {
           return rec.castTimeMs;
         case 'ilvl':
           return createdLevel(rec);
+        case 'learned':
+          return rec.learnedFrom.length ? learnedFromText(rec.learnedFrom) : null;
+        case 'skill':
+          return rec.requiredSkill;
       }
     },
     ({ rec }) => rec.name,
@@ -105,7 +110,7 @@ export function RecipesPage() {
       repo.saveRecipe({
         id,
         spellId: null,
-        imported: { name: 'New recipe', kind: 'craft', profession: null, castTimeMs: 0, inputs: [], tools: [], outputs: [], outputMode: 'independent' },
+        imported: { name: 'New recipe', kind: 'craft', profession: null, castTimeMs: 0, inputs: [], tools: [], outputs: [], outputMode: 'independent', requiredSkill: null, learnedFrom: [], skillRange: null },
         overrides: {},
         source: 'manual',
         fetchedAt: null,
@@ -209,6 +214,8 @@ export function RecipesPage() {
                 <SortHeader label="Kind" k="kind" sort={sort} />
                 <SortHeader label="Cast" k="cast" sort={sort} className="r" />
                 <SortHeader label="iLvl" k="ilvl" sort={sort} className="r" />
+                <SortHeader label="Learned from" k="learned" sort={sort} />
+                <SortHeader label="Skill" k="skill" sort={sort} className="r" />
                 <th>Reagents</th>
                 <th>Creates</th>
                 <th>Source</th>
@@ -236,6 +243,15 @@ export function RecipesPage() {
                   <td className="r small">{rec.castTimeMs / 1000}s</td>
                   <td className="r" title="Item level of the created item">
                     {createdLevel(rec) ?? <span className="muted">-</span>}
+                  </td>
+                  <td className="small">{rec.learnedFrom.length ? learnedFromText(rec.learnedFrom) : <span className="muted">-</span>}</td>
+                  <td className="r small">
+                    {rec.requiredSkill ?? <span className="muted">-</span>}
+                    {rec.skillRange && (
+                      <div>
+                        <SkillLevels range={rec.skillRange} />
+                      </div>
+                    )}
                   </td>
                   <td className="small">
                     {rec.inputs.map((i, k) => (
@@ -271,7 +287,7 @@ export function RecipesPage() {
                 </tr>
                 {editing === r.id && edit.working && (
                   <tr className="editor-row">
-                    <td colSpan={10}>
+                    <td colSpan={12}>
                       <RecipeEditor
                         record={edit.working}
                         dirty={edit.dirty}
@@ -287,7 +303,7 @@ export function RecipesPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="muted">
+                  <td colSpan={12} className="muted">
                     {recipeRecords.length ? 'No recipes match these filters.' : 'No recipes yet. Paste a Wowhead spell link above.'}
                   </td>
                 </tr>
@@ -404,6 +420,47 @@ function RecipeEditor({
           <NumberInput value={rec.castTimeMs / 1000} step={0.001} min={0} onChange={(v) => set('castTimeMs', Math.round((v ?? 0) * 1000))} />
         </label>
       </div>
+
+      <h3>Learning</h3>
+      <div className="field-row">
+        <fieldset className="inline-set">
+          <legend className="small muted">Learned from</legend>
+          {(Object.keys(SOURCE_LABELS) as RecipeSource[]).map((src) => (
+            <label key={src} className="inline small">
+              <input
+                type="checkbox"
+                checked={rec.learnedFrom.includes(src)}
+                onChange={(e) =>
+                  set(
+                    'learnedFrom',
+                    (Object.keys(SOURCE_LABELS) as RecipeSource[]).filter((s) => (s === src ? e.target.checked : rec.learnedFrom.includes(s))),
+                  )
+                }
+              />
+              {SOURCE_LABELS[src]}
+            </label>
+          ))}
+        </fieldset>
+        <label>
+          Required skill
+          <NumberInput value={rec.requiredSkill} min={0} step={1} onChange={(v) => set('requiredSkill', v)} />
+        </label>
+        {(['orange', 'yellow', 'green', 'grey'] as const).map((tier) => (
+          <label key={tier}>
+            <span className={`skill-${tier}`}>{tier[0].toUpperCase() + tier.slice(1)} from</span>
+            <NumberInput
+              value={rec.skillRange?.[tier] ?? null}
+              min={0}
+              step={1}
+              onChange={(v) => {
+                const next = { ...(rec.skillRange ?? { orange: null, yellow: null, green: null, grey: null }), [tier]: v };
+                set('skillRange', firstTier(next) === null ? null : next);
+              }}
+            />
+          </label>
+        ))}
+      </div>
+      <p className="small muted">A recipe learned from a trainer counts as known by every character with enough skill. Leave a color empty when the recipe does not show it on Wowhead.</p>
 
       <h3>Reagents</h3>
       <table className="form-table">

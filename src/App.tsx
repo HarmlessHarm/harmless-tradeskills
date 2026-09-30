@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type ComponentType } from 'react';
+import { CharactersPage } from './ui/CharactersPage';
 import { FlipPage } from './ui/FlipPage';
 import { Icon } from './ui/icons';
 import { ItemsPage } from './ui/ItemsPage';
@@ -17,6 +18,7 @@ const TABS = [
   { key: 'start', label: 'Get started', Page: WelcomePage },
   { key: 'workflows', label: 'Workflows', Page: WorkflowsPage, divider: true },
   { key: 'flip', label: 'AH flip', Page: FlipPage },
+  { key: 'characters', label: 'Characters', Page: CharactersPage },
   { key: 'items', label: 'Items', Page: ItemsPage, divider: true },
   { key: 'recipes', label: 'Recipes', Page: RecipesPage },
   { key: 'settings', label: 'Settings', Page: SettingsPage, divider: true },

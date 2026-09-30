@@ -1,7 +1,7 @@
 # Architecture: WoW Forever Profession Toolbox (MVP)
 
 ## Stack
-React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browser, persisted to IndexedDB [ref: DEC-18]. Shareable game data (items, recipes, DE rules), shareable AH price snapshots (every AH price in the app), and personal data (workflows, flip favorites and ledger, min AH prices, settings) are separate database files [ref: DEC-21, DEC-23, DEC-27]. Wowhead is proxied through a Vercel rewrite at `/wh/{item|spell}/{id}`.
+React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browser, persisted to IndexedDB [ref: DEC-18]. Shareable game data (items, recipes, DE rules), shareable AH price snapshots (every AH price in the app), and personal data (workflows, flip favorites and ledger, min AH prices, characters, settings) are separate database files [ref: DEC-21, DEC-23, DEC-27]. Wowhead is proxied through a Vercel rewrite at `/wh/{item|spell}/{id}`.
 
 ## Data model (conceptual)
 - **Item**: WoW item ID, name, quality, item level, class (armor/weapon/reagent...), vendor sell price (imported), vendor buy price (manual), source and timestamps, manual overrides. [ref: DEC-3, DEC-6, REQ-1]
@@ -9,6 +9,8 @@ React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browse
 - **DisenchantRule**: quality, item level min/max, item class (armor/weapon) -> outputs (item, chance, min/max qty). A DE recipe for an item is derived from the matching rule rather than stored. [ref: DEC-2, REQ-3]
 - **PriceObservation**: item, channel (AH), price, optional min AH price, timestamp. [ref: REQ-4]
 - **Workflow**: name, notes, ordered recipe references, buy map (item -> AH/vendor) for external inputs, sell map (item -> AH/vendor/keep) for terminal outputs. Recipes are referenced, not copied. [ref: DEC-9, REQ-6]
+- **Recipe learning** (on Recipe): learned from (trainer/vendor/drop/quest/other), required skill, skill-up levels (orange/yellow/green/grey, orange optional). [ref: DEC-29]
+- **Character** (personal): name, ruleset (PvE/PvP/RP), faction, level, notes, professions with skill, and recipes learned by hand. A character knows trainer recipes its skill allows plus the ones marked learned. [ref: DEC-29]
 - **Config**: AH cut per AH type, deposit rate per duration, durations, per-action overhead, per-batch overhead, default batch size. [ref: REQ-5, NFR-5]
 
 ## Engine (conceptual)

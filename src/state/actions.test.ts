@@ -6,7 +6,7 @@ import { setProfession } from './actions';
 const recipe = (id: string, profession: string | null, overrides: RecipeRecord['overrides'] = {}): RecipeRecord => ({
   id,
   spellId: null,
-  imported: { name: id, kind: 'craft', profession, castTimeMs: 0, inputs: [], tools: [], outputs: [], outputMode: 'independent' },
+  imported: { name: id, kind: 'craft', profession, castTimeMs: 0, inputs: [], tools: [], outputs: [], outputMode: 'independent', requiredSkill: null, learnedFrom: [], skillRange: null },
   overrides,
   source: 'wowhead',
   fetchedAt: 1,

@@ -58,6 +58,25 @@ export interface RecipeOutput {
 /** Recipe kinds are open ended strings so new kinds need no engine change (REQ-2.4). */
 export type RecipeKind = 'craft' | 'disenchant' | 'convert' | (string & {});
 
+/** Where a recipe is learned, as Wowhead's Source column names it. A recipe can have several. */
+export type RecipeSource = 'trainer' | 'vendor' | 'drop' | 'quest' | 'other';
+
+/**
+ * The skill levels at which a recipe turns orange, yellow, green and grey. Not every recipe has all
+ * four: some start at yellow, and some show only two tiers. A missing tier is null.
+ */
+export interface SkillRange {
+  orange: number | null;
+  yellow: number | null;
+  green: number | null;
+  grey: number | null;
+}
+
+export const SKILL_TIERS = ['orange', 'yellow', 'green', 'grey'] as const;
+
+/** The level where the recipe's first tier starts, which is the skill needed to learn it. */
+export const firstTier = (r: SkillRange): number | null => SKILL_TIERS.map((t) => r[t]).find((n) => n !== null) ?? null;
+
 export interface RecipeFields {
   name: string;
   kind: RecipeKind;
@@ -72,6 +91,11 @@ export interface RecipeFields {
    * 'exclusive': one roll picks exactly one output, e.g. disenchanting. Chances should sum to 1 or less.
    */
   outputMode: 'independent' | 'exclusive';
+  /** Skill needed to learn it. null when unknown. */
+  requiredSkill: number | null;
+  /** Where it is learned. Empty when unknown. */
+  learnedFrom: RecipeSource[];
+  skillRange: SkillRange | null;
 }
 
 export interface RecipeRecord {
@@ -204,4 +228,31 @@ export interface FlipFavorite {
   ahType: AhType;
   /** Number of items flipped. Older favorites have none and use 1. */
   qty?: number;
+}
+
+export type Faction = 'alliance' | 'horde';
+
+/** Forever has no realms: each ruleset is a megaserver, with its own linked auction houses. */
+export type Ruleset = 'pve' | 'pvp' | 'rp';
+
+export interface CharacterProfession {
+  profession: string;
+  skill: number;
+}
+
+/** One of your characters (#21). Personal data. */
+export interface Character {
+  id: number;
+  name: string;
+  ruleset: Ruleset | null;
+  faction: Faction | null;
+  level: number | null;
+  notes: string;
+  professions: CharacterProfession[];
+  /**
+   * Recipes the character learned that the trainer rule cannot tell: from a recipe item, a quest or
+   * a drop. Trainer recipes count as known once the skill is high enough and are not listed here.
+   */
+  learned: string[];
+  updatedAt: number;
 }

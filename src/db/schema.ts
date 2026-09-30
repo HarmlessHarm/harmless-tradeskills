@@ -6,7 +6,7 @@
  * Data is split over three database files so game data and prices can be shared without personal
  * data (DEC-21, DEC-23):
  * - data: items, recipes and disenchant rules. Shareable with other players.
- * - user: workflows, flip favorites, the flip ledger, min AH prices and settings.
+ * - user: workflows, flip favorites, the flip ledger, min AH prices, characters and settings.
  * - prices: AH price snapshots. Shareable with other players on the same realm.
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
@@ -111,6 +111,25 @@ export const USER_MIGRATIONS: string[] = [
     SELECT p.item_id, p.ah_min, p.observed_at FROM price_observations p
     JOIN (SELECT item_id, MAX(id) AS id FROM price_observations GROUP BY item_id) latest ON latest.id = p.id
     WHERE p.ah_min IS NOT NULL;`,
+  // Characters (#21). Professions are edited as a whole, so they are a JSON column. Recipes a
+  // character learned by hand (or, later, from an addon scan) are rows, one per recipe.
+  `CREATE TABLE characters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    ruleset TEXT,
+    faction TEXT,
+    level INTEGER,
+    notes TEXT NOT NULL DEFAULT '',
+    professions TEXT NOT NULL DEFAULT '[]',
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE character_recipes (
+    character_id INTEGER NOT NULL,
+    recipe_id TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    learned_at INTEGER NOT NULL,
+    PRIMARY KEY (character_id, recipe_id)
+  );`,
 ];
 
 /**

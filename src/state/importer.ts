@@ -1,6 +1,6 @@
 import type { Repo } from '../db/repo';
 import type { ItemClass, ItemFields, ItemRecord, RecipeRecord } from '../engine/types';
-import { fetchTooltip, parseItemTooltip, parseSpellTooltip, type Fetcher, type WowheadRef } from '../wowhead/adapter';
+import { fetchTooltip, parseItemTooltip, parseSpellTooltip, type Fetcher, type PastedRecipeRow, type WowheadRef } from '../wowhead/adapter';
 
 /**
  * Lazy, on-demand imports (DEC-5, NFR-4). Existing overrides and manual fields are always kept.
@@ -49,8 +49,14 @@ export async function importRecipe(
   const recipe: RecipeRecord = {
     id,
     spellId,
-    // Wowhead's tooltip has no profession, so keep one set earlier (by bulk import or by hand).
-    imported: { ...parsed.fields, profession: parsed.fields.profession ?? existing?.imported.profession ?? null },
+    // Wowhead's tooltip has no profession or learning info, so keep what was set earlier (by bulk import or by hand).
+    imported: {
+      ...parsed.fields,
+      profession: parsed.fields.profession ?? existing?.imported.profession ?? null,
+      requiredSkill: existing?.imported.requiredSkill ?? null,
+      learnedFrom: existing?.imported.learnedFrom ?? [],
+      skillRange: existing?.imported.skillRange ?? null,
+    },
     overrides: existing?.overrides ?? {},
     source: 'wowhead',
     fetchedAt: now,
@@ -85,6 +91,8 @@ export interface BulkResult {
   skipped: number;
   /** Recipes whose profession was set by this run. */
   tagged: number;
+  /** Recipes whose required skill, source or skill range was set by this run. */
+  learning: number;
   errors: string[];
   warnings: string[];
 }
@@ -104,7 +112,7 @@ export function setRecipeProfession(repo: Repo, spellId: number, profession: str
 export async function bulkImport(
   repo: Repo,
   refs: WowheadRef[],
-  opts: { force: boolean; profession?: string | null; fetcher?: Fetcher },
+  opts: { force: boolean; profession?: string | null; recipeRows?: PastedRecipeRow[]; fetcher?: Fetcher },
   onProgress: (done: number, total: number) => void,
 ): Promise<BulkResult> {
   const ordered = [...refs.filter((r) => r.type === 'spell'), ...refs.filter((r) => r.type === 'item')];
@@ -120,7 +128,8 @@ export async function bulkImport(
   const markPulledIn = () => {
     if (!opts.force) for (const r of todo) if (r.type === 'item' && !done.has(refKey(r)) && has(r)) done.add(refKey(r));
   };
-  const result: BulkResult = { imported: 0, skipped: 0, tagged: 0, errors: [], warnings: [] };
+  const result: BulkResult = { imported: 0, skipped: 0, tagged: 0, learning: 0, errors: [], warnings: [] };
+  const rowInfo = new Map((opts.recipeRows ?? []).map((r) => [r.spellId, r]));
   let fetched = false;
   onProgress(0, todo.length);
   for (const ref of ordered) {
@@ -150,8 +159,29 @@ export async function bulkImport(
     }
     // Tag pasted recipes with the chosen profession, including ones that were already imported.
     if (ref.type === 'spell' && opts.profession && setRecipeProfession(repo, ref.id, opts.profession)) result.tagged++;
+    const info = ref.type === 'spell' ? rowInfo.get(ref.id) : undefined;
+    if (info && setRecipeLearning(repo, info)) result.learning++;
   }
   return result;
+}
+
+/**
+ * Store how a recipe is learned, from a pasted recipe table row, as base values so they are not
+ * shown as edits. Values the row does not have are kept. Returns whether anything changed.
+ */
+export function setRecipeLearning(repo: Repo, row: PastedRecipeRow): boolean {
+  const r = repo.listRecipes().find((x) => x.spellId === row.spellId);
+  if (!r) return false;
+  const next = {
+    ...r.imported,
+    requiredSkill: row.requiredSkill ?? r.imported.requiredSkill,
+    learnedFrom: row.learnedFrom.length ? row.learnedFrom : r.imported.learnedFrom,
+    skillRange: row.skillRange ?? r.imported.skillRange,
+  };
+  const same = (k: 'requiredSkill' | 'learnedFrom' | 'skillRange') => JSON.stringify(next[k]) === JSON.stringify(r.imported[k]);
+  if (same('requiredSkill') && same('learnedFrom') && same('skillRange')) return false;
+  repo.saveRecipe({ ...r, imported: next, updatedAt: Date.now() });
+  return true;
 }
 
 /** Manual bulk refresh of Wowhead records older than maxAgeMs (REQ-1.3). */

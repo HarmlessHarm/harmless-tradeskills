@@ -93,7 +93,8 @@ describe('repo', () => {
     // A personal database from before snapshots: every migration up to the move.
     const user = new SQL.Database();
     user.exec(`PRAGMA application_id = ${APPLICATION_ID.user}`);
-    const before = USER_MIGRATIONS.length - 1;
+    // Migration 3 creates ah_min_prices from price_observations.
+    const before = 3;
     USER_MIGRATIONS.slice(0, before).forEach((m) => user.exec(m));
     user.exec(`PRAGMA user_version = ${before}`);
     user.exec(`INSERT INTO price_observations (item_id, ah_price, ah_min, observed_at) VALUES
@@ -378,7 +379,7 @@ describe('split databases', () => {
     const repo = await freshRepo();
     const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();
     expect(tables(repo.data)).toEqual(['de_rules', 'items', 'recipes']);
-    expect(tables(repo.user)).toEqual(['ah_min_prices', 'flip_transactions', 'settings', 'workflows']);
+    expect(tables(repo.user)).toEqual(['ah_min_prices', 'character_recipes', 'characters', 'flip_transactions', 'settings', 'workflows']);
     expect(tables(repo.prices)).toEqual(['price_snapshots']);
     expect(dbKind(repo.data)).toBe('data');
     expect(dbKind(repo.user)).toBe('user');
@@ -423,5 +424,29 @@ describe('split databases', () => {
     const db = new SQL.Database();
     db.exec('CREATE TABLE foo (x)');
     expect(() => dbKind(db)).toThrow(/Not a Harmless Tradeskills database/);
+  });
+});
+
+describe('characters', () => {
+  it('saves characters with professions and learned recipes, and deletes them whole', async () => {
+    const repo = await freshRepo();
+    const base = { id: 0, name: 'Harm', ruleset: 'pvp' as const, faction: 'horde' as const, level: 20, notes: '', professions: [{ profession: 'Alchemy', skill: 75 }], learned: [], updatedAt: 1 };
+    const id = repo.saveCharacter(base);
+    const other = repo.saveCharacter({ ...base, name: 'Alt' });
+    repo.setLearned(id, 'spell:6624', true);
+    repo.setLearned(id, 'spell:6624', true);
+    repo.setLearned(id, 'spell:2331', true);
+    repo.setLearned(other, 'spell:2331', true);
+    repo.setLearned(id, 'spell:2331', false);
+    expect(repo.listCharacters().map((c) => [c.name, c.learned])).toEqual([
+      ['Alt', ['spell:2331']],
+      ['Harm', ['spell:6624']],
+    ]);
+    repo.saveCharacter({ ...base, id, professions: [{ profession: 'Alchemy', skill: 90 }], updatedAt: 2 });
+    expect(repo.listCharacters().find((c) => c.id === id)).toMatchObject({ professions: [{ profession: 'Alchemy', skill: 90 }], ruleset: 'pvp', faction: 'horde', level: 20 });
+    repo.deleteCharacter(id);
+    expect(repo.listCharacters().map((c) => c.name)).toEqual(['Alt']);
+    repo.saveCharacter({ ...base, name: 'New' });
+    expect(repo.listCharacters().find((c) => c.name === 'New')!.learned).toEqual([]);
   });
 });
