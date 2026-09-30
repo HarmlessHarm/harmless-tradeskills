@@ -58,6 +58,9 @@ const craft = (id: string, name: string, castTimeMs: number, inputs: [number, nu
   tools,
   outputs: [{ itemId: out, chance: 1, minQty: 1, maxQty: 1 }],
   outputMode: 'independent',
+  requiredSkill: null,
+  learnedFrom: [],
+  skillRange: null,
 });
 
 export const recipes: Recipe[] = [

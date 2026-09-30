@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { extractProfessions, extractVendorPrices, withoutProfessionSpells, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
+import { extractProfessions, extractRecipeRows, extractVendorPrices, parseRecipeSources, withoutProfessionSpells, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
 
 /** Real Forever tooltip responses, saved byte for byte. See fixtures/. */
 const fixture = (name: string): TooltipResponse =>
@@ -209,5 +209,56 @@ describe('fetchTooltip', () => {
   it('turns bad responses into readable errors', async () => {
     await expect(fetchTooltip({ type: 'item', id: 1 }, async () => new Response('x', { status: 500 }))).rejects.toThrow(/HTTP 500/);
     await expect(fetchTooltip({ type: 'item', id: 1 }, async () => new Response('{"error":"not found"}'))).rejects.toThrow(/no item 1/);
+  });
+});
+
+describe('extractRecipeRows', () => {
+  // A profession's recipe table copied from Wowhead, run through an HTML clipboard viewer.
+  const html = readFileSync(fileURLToPath(new URL('./fixtures/recipes-alchemy.html', import.meta.url)), 'utf8');
+  const rows = extractRecipeRows(html);
+  const row = (spellId: number) => rows.find((r) => r.spellId === spellId);
+
+  it('reads every recipe row', () => {
+    expect(rows.map((r) => r.spellId)).toEqual([1249630, 1249633, 7836, 1230564, 7837, 2331, 1249631, 6624]);
+    expect(rows.every((r) => r.profession === 'Alchemy')).toBe(true);
+  });
+  it('reads the required skill and a range without an orange tier', () => {
+    expect(row(1249633)).toEqual({
+      spellId: 1249633,
+      profession: 'Alchemy',
+      requiredSkill: 50,
+      learnedFrom: ['trainer'],
+      skillRange: { orange: null, yellow: 50, green: 70, grey: 90 },
+    });
+  });
+  it('reads a range with an orange tier, also when orange and yellow start together', () => {
+    expect(row(7836)?.skillRange).toEqual({ orange: 80, yellow: 80, green: 90, grey: 100 });
+    expect(row(6624)?.skillRange).toEqual({ orange: 150, yellow: 175, green: 195, grey: 215 });
+  });
+  it('reads one or more sources', () => {
+    expect(row(6624)?.learnedFrom).toEqual(['vendor']);
+    expect(row(1230564)?.learnedFrom).toEqual(['quest', 'trainer']);
+  });
+  it('does not depend on the table wrapper or absolute links', () => {
+    const bare = '<td><a href="/forever/spell=2331/x">Minor Mana Potion</a></td><td>Drop</td><td><a href="/forever/spells=11.171">Alchemy</a>&nbsp;(25)<span class="r1">25</span><span class="r2">65</span><span class="r3">85</span><span class="r4">105</span></td>';
+    expect(extractRecipeRows(bare)).toEqual([
+      { spellId: 2331, profession: 'Alchemy', requiredSkill: 25, learnedFrom: ['drop'], skillRange: { orange: 25, yellow: 65, green: 85, grey: 105 } },
+    ]);
+  });
+  it('keeps a row without a skill column, with empty values', () => {
+    expect(extractRecipeRows('<tr><td><a href="/forever/spell=3840">Heavy Linen Gloves</a></td></tr>')).toEqual([
+      { spellId: 3840, profession: null, requiredSkill: null, learnedFrom: [], skillRange: null },
+    ]);
+  });
+  it('finds the profession from its spell list link', () => {
+    expect(extractProfessions(html)).toEqual(['Alchemy']);
+  });
+});
+
+describe('parseRecipeSources', () => {
+  it('maps known words and keeps the rest as other', () => {
+    expect(parseRecipeSources('World Drop, Vendor')).toEqual(['drop', 'vendor']);
+    expect(parseRecipeSources('Discovery')).toEqual(['other']);
+    expect(parseRecipeSources('')).toEqual([]);
   });
 });

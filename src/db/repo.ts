@@ -260,7 +260,13 @@ export class Repo {
       return {
         id: String(r.id),
         spellId: num(r.spell_id),
-        imported: { ...imported, outputMode: imported.outputMode ?? 'independent' },
+        imported: {
+          ...imported,
+          outputMode: imported.outputMode ?? 'independent',
+          requiredSkill: imported.requiredSkill ?? null,
+          learnedFrom: imported.learnedFrom ?? [],
+          skillRange: imported.skillRange ?? null,
+        },
         overrides: json(r.overrides, {}),
         source: r.source as RecipeRecord['source'],
         fetchedAt: num(r.fetched_at),

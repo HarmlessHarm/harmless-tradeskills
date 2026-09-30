@@ -34,6 +34,24 @@ describe('importer professions', () => {
   });
 });
 
+describe('importer learning info', () => {
+  it('stores pasted skill and source on recipes already imported, and keeps them on refresh', async () => {
+    const repo = await freshRepo();
+    await importRecipe(repo, 2963, { fetcher });
+    const row = { spellId: 2963, profession: 'Tailoring', requiredSkill: 1, learnedFrom: ['trainer' as const], skillRange: { orange: 1, yellow: 25, green: 37, grey: 50 } };
+    const res = await bulkImport(repo, [{ type: 'spell', id: 2963 }], { force: false, recipeRows: [row], fetcher }, () => {});
+    expect(res.learning).toBe(1);
+    const expected = { requiredSkill: 1, learnedFrom: ['trainer'], skillRange: row.skillRange };
+    expect(repo.listRecipes()[0].imported).toMatchObject(expected);
+    expect(repo.listRecipes()[0].overrides).toEqual({});
+
+    const again = await bulkImport(repo, [{ type: 'spell', id: 2963 }], { force: false, recipeRows: [row], fetcher }, () => {});
+    expect(again.learning).toBe(0);
+    await importRecipe(repo, 2963, { force: true, fetcher });
+    expect(repo.listRecipes()[0].imported).toMatchObject(expected);
+  });
+});
+
 describe('bulkImport progress', () => {
   it('counts only new refs and advances when a recipe brings in pasted items', async () => {
     const repo = await freshRepo();

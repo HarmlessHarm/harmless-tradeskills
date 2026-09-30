@@ -8,7 +8,7 @@
  *
  * Be polite (NFR-4): callers fetch on demand only and cache the result in the database.
  */
-import type { ItemClass, ItemFields, Qty, Quality, RecipeFields } from '../engine/types';
+import type { ItemClass, ItemFields, Qty, Quality, RecipeFields, RecipeSource, SkillRange } from '../engine/types';
 import { PROFESSIONS } from '../professions';
 
 export type WowheadType = 'item' | 'spell';
@@ -73,17 +73,93 @@ export function withoutProfessionSpells(refs: PastedRef[], extraNames: string[] 
 }
 
 /**
- * Profession names linked in a pasted selection (Wowhead links a skill as /skill=197 with its name
- * as the text). Used to suggest a profession for pasted recipes; empty when the page has none.
+ * A link to a profession: /skill=197, or /spells=11.171 (the profession's spell list, which is how
+ * a recipe table's skill column links it). The link text is the profession's name.
+ */
+const PROFESSION_LINK = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&](?:skill=\d+|spells=11\.\d+)[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+
+/**
+ * Profession names linked in a pasted selection. Used to suggest a profession for pasted recipes;
+ * empty when the page has none.
  */
 export function extractProfessions(html: string): string[] {
   const names = new Set<string>();
-  const anchors = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&]skill=\d+[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const anchors = new RegExp(PROFESSION_LINK.source, 'gi');
   for (let m = anchors.exec(html); m; m = anchors.exec(html)) {
     const name = decodeEntities(m[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
     if (name && !/^\d+$/.test(name)) names.add(name);
   }
   return [...names];
+}
+
+export interface PastedRecipeRow {
+  spellId: number;
+  /** Profession named in the skill column, when the row has one. */
+  profession: string | null;
+  /** The skill in "Alchemy (50)". */
+  requiredSkill: number | null;
+  /** The Source column, such as "Quest, Trainer". Empty when the row has none. */
+  learnedFrom: RecipeSource[];
+  skillRange: SkillRange | null;
+}
+
+const SOURCE_WORDS: [RegExp, RecipeSource][] = [
+  [/trainer/i, 'trainer'],
+  [/vendor/i, 'vendor'],
+  [/drop/i, 'drop'],
+  [/quest/i, 'quest'],
+];
+
+/** "Quest, Trainer" to ['quest', 'trainer']. Words we do not know become 'other'. */
+export function parseRecipeSources(text: string): RecipeSource[] {
+  const found = new Set<RecipeSource>();
+  for (const part of text.split(',').map((p) => p.trim()).filter(Boolean)) {
+    found.add(SOURCE_WORDS.find(([re]) => re.test(part))?.[1] ?? 'other');
+  }
+  return [...found];
+}
+
+/**
+ * Skill levels from a recipe table's skill cell: spans r1 (orange), r2 (yellow), r3 (green) and
+ * r4 (grey). A recipe without an orange tier has no r1. null unless yellow, green and grey are all there.
+ */
+function parseSkillRange(html: string): SkillRange | null {
+  const tier: Record<string, number> = {};
+  const re = /<span\b[^>]*\bclass\s*=\s*["'][^"']*\br([1-4])\b[^"']*["'][^>]*>\s*(\d+)\s*<\/span>/gi;
+  for (let m = re.exec(html); m; m = re.exec(html)) tier[m[1]] ??= Number(m[2]);
+  if (tier['2'] === undefined || tier['3'] === undefined || tier['4'] === undefined) return null;
+  return { orange: tier['1'] ?? null, yellow: tier['2'], green: tier['3'], grey: tier['4'] };
+}
+
+/**
+ * How each recipe is learned, from rows copied out of a profession's recipe table on Wowhead. The
+ * skill cell holds the profession link with the required skill ("Alchemy (50)") and the colored
+ * skill levels; the Source column is the cell just before it. Rows without a recipe link are left
+ * out; a row without a skill cell is kept with empty values.
+ */
+export function extractRecipeRows(html: string): PastedRecipeRow[] {
+  const rows = /<tr\b/i.test(html) ? html.split(/<tr\b/i) : [html];
+  const found = new Map<number, PastedRecipeRow>();
+  for (const row of rows) {
+    const spell = /<a\b[^>]*\bhref\s*=\s*["'][^"']*[/?&]spell=(\d+)[^"']*["']/i.exec(row);
+    if (!spell) continue;
+    const spellId = Number(spell[1]);
+    if (found.has(spellId)) continue;
+    const cells = row.split(/<td\b/i).slice(1);
+    const skillAt = cells.findIndex((c) => new RegExp(PROFESSION_LINK.source, 'i').test(c));
+    const skillCell = skillAt >= 0 ? cells[skillAt] : '';
+    const prof = new RegExp(PROFESSION_LINK.source, 'i').exec(skillCell);
+    const required = prof ? /^\s*(?:&nbsp;)?\s*\((\d+)\)/.exec(skillCell.slice(prof.index + prof[0].length)) : null;
+    const sourceText = skillAt > 0 ? tooltipText(cells[skillAt - 1].replace(/^[^>]*>/, '')).replace(/\n/g, ' ') : '';
+    found.set(spellId, {
+      spellId,
+      profession: prof ? decodeEntities(prof[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() || null : null,
+      requiredSkill: required ? Number(required[1]) : null,
+      learnedFrom: /^[a-z ,]+$/i.test(sourceText) ? parseRecipeSources(sourceText) : [],
+      skillRange: parseSkillRange(skillCell),
+    });
+  }
+  return [...found.values()];
 }
 
 export interface PastedVendorPrice {
@@ -365,6 +441,9 @@ export function parseSpellTooltip(data: TooltipResponse): ParsedSpell {
     tools: [],
     outputs: created !== null ? [{ itemId: created, chance: 1, minQty: 1, maxQty: 1 }] : [],
     outputMode: 'independent',
+    requiredSkill: null,
+    learnedFrom: [],
+    skillRange: null,
   };
   const referencedItems = [...new Set([...inputs.map((i) => i.itemId), ...(created !== null ? [created] : [])])];
   return { fields, referencedItems, warnings };

@@ -58,6 +58,20 @@ export interface RecipeOutput {
 /** Recipe kinds are open ended strings so new kinds need no engine change (REQ-2.4). */
 export type RecipeKind = 'craft' | 'disenchant' | 'convert' | (string & {});
 
+/** Where a recipe is learned, as Wowhead's Source column names it. A recipe can have several. */
+export type RecipeSource = 'trainer' | 'vendor' | 'drop' | 'quest' | 'other';
+
+/**
+ * The skill levels at which a recipe turns orange, yellow, green and grey. Some recipes have no
+ * orange tier and are yellow from the start.
+ */
+export interface SkillRange {
+  orange: number | null;
+  yellow: number;
+  green: number;
+  grey: number;
+}
+
 export interface RecipeFields {
   name: string;
   kind: RecipeKind;
@@ -72,6 +86,11 @@ export interface RecipeFields {
    * 'exclusive': one roll picks exactly one output, e.g. disenchanting. Chances should sum to 1 or less.
    */
   outputMode: 'independent' | 'exclusive';
+  /** Skill needed to learn it. null when unknown. */
+  requiredSkill: number | null;
+  /** Where it is learned. Empty when unknown. */
+  learnedFrom: RecipeSource[];
+  skillRange: SkillRange | null;
 }
 
 export interface RecipeRecord {

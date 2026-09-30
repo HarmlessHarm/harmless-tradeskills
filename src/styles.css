@@ -1876,4 +1876,28 @@ a.button.primary {
   background: var(--bg-2);
   border-color: var(--line);
   color: var(--muted);
+
+/* Recipe skill-up colors, as in game */
+.skill-levels {
+  display: inline-flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.skill-orange { color: #ff8040; }
+.skill-yellow { color: #ffff00; }
+.skill-green { color: #40bf40; }
+.skill-grey { color: #808080; }
+.skill-red { color: var(--neg); }
+.inline-set {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+.inline-set legend {
+  width: 100%;
+  padding: 0;
 }

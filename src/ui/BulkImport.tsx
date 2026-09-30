@@ -2,7 +2,8 @@ import { useState, type ClipboardEvent } from 'react';
 import { bulkImport, type BulkResult } from '../state/importer';
 import { useStore } from '../state/store';
 import { professionOptions } from '../professions';
-import { extractProfessions, extractWowheadRefs, withoutProfessionSpells, type PastedRef } from '../wowhead/adapter';
+import { extractProfessions, extractRecipeRows, extractWowheadRefs, withoutProfessionSpells, type PastedRecipeRow, type PastedRef } from '../wowhead/adapter';
+import { learnedFromText, skillRangeText } from '../professions';
 import { errorText } from './common';
 
 const key = (r: PastedRef) => `${r.type}:${r.id}`;
@@ -21,6 +22,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<BulkResult | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [profession, setProfession] = useState('');
+  const [recipeRows, setRecipeRows] = useState<PastedRecipeRow[]>([]);
 
   const known = (r: PastedRef) =>
     r.type === 'spell' ? recipeRecords.some((x) => x.spellId === r.id) : itemRecords.some((x) => x.id === r.id);
@@ -32,6 +34,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
     const profs = extractProfessions(html);
     const found = withoutProfessionSpells(extractWowheadRefs(html, e.clipboardData.getData('text/plain')), profs);
     setProfession(profs.length === 1 ? profs[0] : '');
+    setRecipeRows(extractRecipeRows(html));
     setRefs(found);
     setResult(null);
     setPicked(new Set(found.map(key)));
@@ -49,10 +52,10 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
     setResult(null);
     try {
       const chosen = refs.filter((r) => picked.has(key(r)));
-      const res = await mutateAsync((repo) => bulkImport(repo, chosen, { force, profession: profession.trim() || null }, (d, t) => setProgress(`${d} of ${t}`)));
+      const res = await mutateAsync((repo) => bulkImport(repo, chosen, { force, profession: profession.trim() || null, recipeRows }, (d, t) => setProgress(`${d} of ${t}`)));
       setResult(res);
     } catch (e) {
-      setResult({ imported: 0, skipped: 0, tagged: 0, errors: [errorText(e)], warnings: [] });
+      setResult({ imported: 0, skipped: 0, tagged: 0, learning: 0, errors: [errorText(e)], warnings: [] });
     } finally {
       setRunning(false);
       setProgress(null);
@@ -63,7 +66,9 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
   const items = refs.filter((r) => r.type === 'item');
   const chosenCount = refs.filter((r) => picked.has(key(r)) && (force || !known(r))).length;
   const pickedSpells = spells.filter((r) => picked.has(key(r))).length;
-  const tagOnly = chosenCount === 0 && pickedSpells > 0 && profession.trim() !== '';
+  const hasLearning = recipeRows.some((r) => r.requiredSkill !== null || r.learnedFrom.length > 0 || r.skillRange !== null);
+  const tagOnly = chosenCount === 0 && pickedSpells > 0 && (profession.trim() !== '' || hasLearning);
+  const rowOf = (r: PastedRef) => (r.type === 'spell' ? recipeRows.find((x) => x.spellId === r.id) : undefined);
 
   const list = (title: string, type: PastedRef['type'], rows: PastedRef[]) =>
     rows.length > 0 && (
@@ -90,6 +95,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
                 />
                 {r.name ?? <span className="muted">unnamed</span>} <span className="muted">#{r.id}</span>
                 {known(r) && <span className="badge">have it</span>}
+                {rowOf(r) && <RowLearning row={rowOf(r)!} />}
               </label>
             </li>
           ))}
@@ -138,7 +144,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
               Re-import ones I already have (keeps my edits)
             </label>
             <button disabled={running || (chosenCount === 0 && !tagOnly)} onClick={run}>
-              {running ? `Importing ${progress ?? ''}` : tagOnly ? `Set profession on ${pickedSpells}` : `Import ${chosenCount}`}
+              {running ? `Importing ${progress ?? ''}` : tagOnly ? `Update ${pickedSpells} recipe${pickedSpells === 1 ? '' : 's'}` : `Import ${chosenCount}`}
             </button>
           </div>
         </>
@@ -149,6 +155,7 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
             Imported {result.imported}
             {result.skipped > 0 && `, skipped ${result.skipped} already in the catalog`}
             {result.tagged > 0 && `, set the profession on ${result.tagged} recipe${result.tagged === 1 ? '' : 's'}`}
+            {result.learning > 0 && `, set skill and source on ${result.learning} recipe${result.learning === 1 ? '' : 's'}`}
             {result.errors.length > 0 && `, ${result.errors.length} failed`}.
           </p>
           {[...result.errors, ...result.warnings].map((m, i) => (
@@ -160,4 +167,14 @@ export function BulkImport({ onClose }: { onClose: () => void }) {
       )}
     </div>
   );
+}
+
+/** What a pasted recipe table row says about learning the recipe, next to its name. */
+function RowLearning({ row }: { row: PastedRecipeRow }) {
+  const parts = [
+    row.learnedFrom.length ? learnedFromText(row.learnedFrom) : null,
+    row.requiredSkill !== null ? `skill ${row.requiredSkill}` : null,
+    row.skillRange ? skillRangeText(row.skillRange) : null,
+  ].filter(Boolean);
+  return parts.length ? <span className="muted"> · {parts.join(' · ')}</span> : null;
 }

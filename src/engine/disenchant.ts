@@ -34,6 +34,9 @@ export function deriveDisenchantRecipe(
     tools: [],
     outputs: rule.outputs.map((o) => ({ ...o })),
     outputMode: 'exclusive',
+    requiredSkill: null,
+    learnedFrom: [],
+    skillRange: null,
   };
 }
 
