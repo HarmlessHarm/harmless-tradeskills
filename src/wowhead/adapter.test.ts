@@ -245,6 +245,22 @@ describe('extractRecipeRows', () => {
       { spellId: 2331, profession: 'Alchemy', requiredSkill: 25, learnedFrom: ['drop'], skillRange: { orange: 25, yellow: 65, green: 85, grey: 105 } },
     ]);
   });
+  it('reads the required skill through wrapping tags, comments and non-breaking spaces', () => {
+    const levels = '<div><span class="r1">110</span> <span class="r2">110</span> <span class="r3">127</span> <span class="r4">145</span></div>';
+    const cell = (skill: string) =>
+      `<tr><td><a href="/forever/spell=8795">Shoulders</a></td><td>Trainer</td><td><div>${skill}</div>${levels}</td></tr>`;
+    for (const skill of [
+      '<span><a href="/forever/spells=11.197">Tailoring</a></span> (110)',
+      '<a href="/forever/spells=11.197">Tailoring</a><!-- --> (<!-- -->110<!-- -->)',
+      '<a href="/forever/spells=11.197">Tailoring</a>\u00a0(110)',
+    ]) {
+      expect(extractRecipeRows(cell(skill))[0]).toMatchObject({ profession: 'Tailoring', requiredSkill: 110, learnedFrom: ['trainer'] });
+    }
+  });
+  it('falls back to the first skill level when the required skill is not in the text', () => {
+    const row = '<tr><td><a href="/forever/spell=8795">x</a></td><td>Trainer</td><td><a href="/forever/spells=11.197">Tailoring</a><div><span class="r2">50</span><span class="r3">70</span><span class="r4">90</span></div></td></tr>';
+    expect(extractRecipeRows(row)[0].requiredSkill).toBe(50);
+  });
   it('keeps a row without a skill column, with empty values', () => {
     expect(extractRecipeRows('<tr><td><a href="/forever/spell=3840">Heavy Linen Gloves</a></td></tr>')).toEqual([
       { spellId: 3840, profession: null, requiredSkill: null, learnedFrom: [], skillRange: null },

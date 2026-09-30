@@ -149,14 +149,17 @@ export function extractRecipeRows(html: string): PastedRecipeRow[] {
     const skillAt = cells.findIndex((c) => new RegExp(PROFESSION_LINK.source, 'i').test(c));
     const skillCell = skillAt >= 0 ? cells[skillAt] : '';
     const prof = new RegExp(PROFESSION_LINK.source, 'i').exec(skillCell);
-    const required = prof ? /^\s*(?:&nbsp;)?\s*\((\d+)\)/.exec(skillCell.slice(prof.index + prof[0].length)) : null;
+    // "(110)" right after the link, allowing for wrapping tags, comments and non-breaking spaces.
+    const required = prof ? /^\s*\((\d+)\)/.exec(tooltipText(skillCell.slice(prof.index + prof[0].length))) : null;
+    const skillRange = parseSkillRange(skillCell);
     const sourceText = skillAt > 0 ? tooltipText(cells[skillAt - 1].replace(/^[^>]*>/, '')).replace(/\n/g, ' ') : '';
     found.set(spellId, {
       spellId,
       profession: prof ? decodeEntities(prof[1].replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim() || null : null,
-      requiredSkill: required ? Number(required[1]) : null,
+      // The required skill is where the recipe's first color starts, so that stands in when the text has none.
+      requiredSkill: required ? Number(required[1]) : (skillRange ? (skillRange.orange ?? skillRange.yellow) : null),
       learnedFrom: /^[a-z ,]+$/i.test(sourceText) ? parseRecipeSources(sourceText) : [],
-      skillRange: parseSkillRange(skillCell),
+      skillRange,
     });
   }
   return [...found.values()];

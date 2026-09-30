@@ -1876,6 +1876,7 @@ a.button.primary {
   background: var(--bg-2);
   border-color: var(--line);
   color: var(--muted);
+}
 
 /* Recipe skill-up colors, as in game */
 .skill-levels {

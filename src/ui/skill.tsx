@@ -12,8 +12,9 @@ export function SkillLevels({ range }: { range: SkillRange }) {
     <span className="skill-levels" title="Orange, yellow, green and grey from these skill levels">
       {tiers
         .filter(([, n]) => n !== null)
-        .map(([tier, n]) => (
+        .map(([tier, n], i) => (
           <span key={tier} className={`skill-${tier}`}>
+            {i > 0 && ' '}
             {n}
           </span>
         ))}
