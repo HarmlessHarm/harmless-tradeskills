@@ -1,6 +1,7 @@
 import type { Database, SqlValue } from 'sql.js';
 import { withDefaults } from '../config';
 import type {
+  Character,
   Config,
   Copper,
   DisenchantRule,
@@ -615,6 +616,56 @@ export class Repo {
     this.run('user', `INSERT INTO settings (key, value) VALUES ('onboarding', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
       JSON.stringify(onboarding),
     ]);
+  }
+
+  // Characters (user database, #21) -------------------------------------------
+
+  listCharacters(): Character[] {
+    const learned = new Map<number, string[]>();
+    for (const r of this.all('user', 'SELECT character_id, recipe_id FROM character_recipes ORDER BY recipe_id')) {
+      const id = Number(r.character_id);
+      learned.set(id, [...(learned.get(id) ?? []), String(r.recipe_id)]);
+    }
+    return this.all('user', 'SELECT * FROM characters ORDER BY name, realm').map((r) => ({
+      id: Number(r.id),
+      name: String(r.name),
+      realm: String(r.realm ?? ''),
+      faction: (r.faction as Character['faction']) ?? null,
+      level: num(r.level),
+      notes: String(r.notes ?? ''),
+      professions: json(r.professions, []),
+      learned: learned.get(Number(r.id)) ?? [],
+      updatedAt: Number(r.updated_at),
+    }));
+  }
+
+  /** Insert when id is 0, otherwise update. Returns the id. Learned recipes are set with setLearned. */
+  saveCharacter(c: Character): number {
+    const params: SqlValue[] = [c.name, c.realm, c.faction, c.level, c.notes, JSON.stringify(c.professions), c.updatedAt];
+    if (c.id) {
+      this.run('user', 'UPDATE characters SET name=?, realm=?, faction=?, level=?, notes=?, professions=?, updated_at=? WHERE id=?', [...params, c.id]);
+      return c.id;
+    }
+    this.run('user', 'INSERT INTO characters (name, realm, faction, level, notes, professions, updated_at) VALUES (?,?,?,?,?,?,?)', params);
+    return this.lastId('user');
+  }
+
+  deleteCharacter(id: number): void {
+    this.run('user', 'DELETE FROM character_recipes WHERE character_id = ?', [id]);
+    this.run('user', 'DELETE FROM characters WHERE id = ?', [id]);
+  }
+
+  /** Mark a recipe as learned by a character, or not. */
+  setLearned(characterId: number, recipeId: string, learned: boolean): void {
+    if (learned) {
+      this.run('user', `INSERT OR IGNORE INTO character_recipes (character_id, recipe_id, source, learned_at) VALUES (?, ?, 'manual', ?)`, [
+        characterId,
+        recipeId,
+        Date.now(),
+      ]);
+    } else {
+      this.run('user', 'DELETE FROM character_recipes WHERE character_id = ? AND recipe_id = ?', [characterId, recipeId]);
+    }
   }
 
   // Config ------------------------------------------------------------------

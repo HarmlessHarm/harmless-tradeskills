@@ -224,3 +224,27 @@ export interface FlipFavorite {
   /** Number of items flipped. Older favorites have none and use 1. */
   qty?: number;
 }
+
+export type Faction = 'alliance' | 'horde';
+
+export interface CharacterProfession {
+  profession: string;
+  skill: number;
+}
+
+/** One of your characters (#21). Personal data. */
+export interface Character {
+  id: number;
+  name: string;
+  realm: string;
+  faction: Faction | null;
+  level: number | null;
+  notes: string;
+  professions: CharacterProfession[];
+  /**
+   * Recipes the character learned that the trainer rule cannot tell: from a recipe item, a quest or
+   * a drop. Trainer recipes count as known once the skill is high enough and are not listed here.
+   */
+  learned: string[];
+  updatedAt: number;
+}
