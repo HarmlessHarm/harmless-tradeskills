@@ -29,6 +29,31 @@ export type Dbs = Record<DbKind, Database>;
 
 type Row = Record<string, SqlValue>;
 
+export type TourId = 'workflow' | 'flip';
+export type TourStatus = 'new' | 'done' | 'skipped';
+
+/** Where a new user is in the guided tours. Stored in personal data, so a reload picks up the tour again. */
+export interface Onboarding {
+  tours: Record<TourId, TourStatus>;
+  /** The tour being followed, if any. */
+  active: {
+    tour: TourId;
+    step: number;
+    /** Workflow tour: workflows with a higher id were made during the tour. */
+    afterId: number;
+    /** Workflow tour: the workflow the user made in it, once they press New. */
+    workflowId: number | null;
+    /** Hidden for now; continued from Get started. */
+    paused?: boolean;
+  } | null;
+  /** Read-only Get started steps the user marked as read. */
+  read: string[];
+  /** The user finished the Get started walkthrough. */
+  completed: boolean;
+}
+
+export const NEW_ONBOARDING: Onboarding = { tours: { workflow: 'new', flip: 'new' }, active: null, read: [], completed: false };
+
 const json = <T>(v: SqlValue, fallback: T): T => {
   if (typeof v !== 'string') return fallback;
   try {
@@ -133,6 +158,22 @@ const KIND_NAME: Record<DbKind, string> = { data: 'game data', user: 'personal d
  * Checks that a file holds what an import button expects (DEC-28). A legacy combined file holds game
  * and personal data, so either of those buttons takes it.
  */
+/**
+ * The bytes of a database for a file export. Game data leaves out the saved Wowhead tooltips: they
+ * are only shown for checking a parse, and make up most of the file. `open` creates a database from
+ * bytes (sql.js `new SQL.Database(bytes)`).
+ */
+export function exportBytes(db: Database, kind: DbKind, open: (bytes: Uint8Array) => Database): Uint8Array {
+  if (kind !== 'data') return db.export();
+  const copy = open(db.export());
+  try {
+    copy.exec('UPDATE items SET raw_tooltip = NULL; UPDATE recipes SET raw_tooltip = NULL; VACUUM;');
+    return copy.export();
+  } finally {
+    copy.close();
+  }
+}
+
 export function expectKind(found: DbKind | 'legacy' | 'empty', expected: DbKind): void {
   if (found === 'empty') throw new Error('The file is empty');
   if (found === expected || (found === 'legacy' && expected !== 'prices')) return;
@@ -549,6 +590,25 @@ export class Repo {
 
   deleteWorkflow(id: number): void {
     this.run('user', 'DELETE FROM workflows WHERE id = ?', [id]);
+  }
+
+  // Onboarding --------------------------------------------------------------
+
+  getOnboarding(): Onboarding {
+    const row = this.all('user', `SELECT value FROM settings WHERE key = 'onboarding'`)[0];
+    const stored = row ? json<Partial<Onboarding>>(row.value, {}) : {};
+    return {
+      tours: { ...NEW_ONBOARDING.tours, ...stored.tours },
+      active: stored.active ?? null,
+      read: stored.read ?? [],
+      completed: stored.completed ?? false,
+    };
+  }
+
+  saveOnboarding(onboarding: Onboarding): void {
+    this.run('user', `INSERT INTO settings (key, value) VALUES ('onboarding', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
+      JSON.stringify(onboarding),
+    ]);
   }
 
   // Config ------------------------------------------------------------------

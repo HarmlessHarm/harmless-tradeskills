@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import initSqlJs from 'sql.js';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG } from '../config';
@@ -6,7 +7,7 @@ import { deShuffle } from '../test/fixtures';
 import type { Transaction } from '../engine/ledger';
 import type { PriceSnapshot } from '../engine/snapshots';
 import { DE_SEED_NOTE } from './deSeed';
-import { dbKind, expectKind, migrate, Repo, splitLegacy } from './repo';
+import { dbKind, expectKind, exportBytes, migrate, Repo, splitLegacy } from './repo';
 import { APPLICATION_ID, LEGACY_MIGRATIONS, USER_MIGRATIONS } from './schema';
 
 describe('repo', () => {
@@ -322,6 +323,57 @@ describe('price snapshots', () => {
 });
 
 describe('split databases', () => {
+  it('stores onboarding progress', async () => {
+    const repo = await freshRepo();
+    expect(repo.getOnboarding()).toEqual({ tours: { workflow: 'new', flip: 'new' }, active: null, read: [], completed: false });
+    const saved = {
+      tours: { workflow: 'new' as const, flip: 'skipped' as const },
+      active: { tour: 'workflow' as const, step: 3, afterId: 0, workflowId: 7, paused: true },
+      read: ['start'],
+      completed: false,
+    };
+    repo.saveOnboarding(saved);
+    expect(repo.getOnboarding()).toEqual(saved);
+  });
+
+  it('opens the game data seed at the latest schema', async () => {
+    const SQL = await initSqlJs();
+    const data = new SQL.Database(readFileSync(new URL('./seed/gamedata.sqlite', import.meta.url)));
+    expect(dbKind(data)).toBe('data');
+    migrate(data, 'data');
+    const fresh = (kind: 'user' | 'prices') => {
+      const db = new SQL.Database();
+      migrate(db, kind);
+      return db;
+    };
+    const repo = new Repo({ data, user: fresh('user'), prices: fresh('prices') });
+    expect(repo.listRecipes().length).toBeGreaterThan(0);
+    expect(repo.listItems().some((i) => i.vendorBuy !== null)).toBe(true);
+    expect(repo.listDeRules().length).toBeGreaterThan(0);
+    // The workflow tour builds the DE shuffle from these.
+    for (const id of ['spell:2963', 'spell:3840', 'spell:25124', 'spell:14807']) expect(repo.listRecipes().some((r) => r.id === id)).toBe(true);
+  });
+
+  it('exports game data without the saved tooltips, and keeps them in the live database', async () => {
+    const SQL = await initSqlJs();
+    const repo = await freshRepo();
+    repo.saveItem({
+      id: 4307,
+      imported: { name: 'Heavy Linen Gloves', quality: 2, itemLevel: 10, itemClass: 'armor', subclass: 'Cloth', vendorSell: 22, icon: null },
+      overrides: {},
+      vendorBuy: null,
+      source: 'wowhead',
+      fetchedAt: 1,
+      updatedAt: 2,
+      rawTooltip: '<b>x</b>',
+    });
+    const open = (b: Uint8Array) => new SQL.Database(b);
+    const exported = new Repo({ data: open(exportBytes(repo.data, 'data', open)), user: repo.user, prices: repo.prices });
+    expect(exported.listItems()[0].rawTooltip).toBeNull();
+    expect(exported.listDeRules()).toHaveLength(repo.listDeRules().length);
+    expect(repo.listItems()[0].rawTooltip).toBe('<b>x</b>');
+  });
+
   it('keeps game data, personal data and prices in separate files', async () => {
     const repo = await freshRepo();
     const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();

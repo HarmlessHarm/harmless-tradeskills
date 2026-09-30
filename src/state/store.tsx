@@ -1,7 +1,7 @@
 import type { Database } from 'sql.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
-import { type DbKind, type Dbs, Repo } from '../db/repo';
+import { exportFile, openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
+import { type DbKind, type Dbs, type Onboarding, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
 import type { Transaction } from '../engine/ledger';
@@ -22,6 +22,8 @@ export interface Snapshot {
   priceSnapshots: PriceSnapshot[];
   /** Flip ledger, oldest first (DEC-26). */
   transactions: Transaction[];
+  /** Progress through the guided tours. */
+  onboarding: Onboarding;
 }
 
 interface StoreValue extends Snapshot {
@@ -31,13 +33,14 @@ interface StoreValue extends Snapshot {
   mutate: <T>(fn: (repo: Repo) => T) => T;
   /** Like mutate, for async work such as Wowhead imports. */
   mutateAsync: <T>(fn: (repo: Repo) => Promise<T>) => Promise<T>;
-  exportDb: (kind: DbKind) => Uint8Array;
+  /** The database as a file to download; game data without the saved Wowhead tooltips. */
+  exportDb: (kind: DbKind) => Promise<Uint8Array>;
   /** Replaces the database(s) the file holds and returns which were replaced. */
   importDb: (bytes: Uint8Array, kind: 'data' | 'user') => Promise<DbKind[]>;
   /** Adds the AH prices of another player's file to yours; yours are never replaced (DEC-28). */
   addPrices: (bytes: Uint8Array, fileName: string) => Promise<{ added: number; skipped: number }>;
-  /** Replaces the given databases with empty ones. */
-  clearDb: (kinds: DbKind[]) => Promise<void>;
+  /** Replaces the given databases with new ones; with `seed`, game data is the starter set, else empty. */
+  clearDb: (kinds: DbKind[], seed: boolean) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -53,6 +56,7 @@ function readSnapshot(repo: Repo): Snapshot {
     flipFavorites: repo.listFlipFavorites(),
     priceSnapshots: repo.listSnapshots(),
     transactions: repo.listTransactions(),
+    onboarding: repo.getOnboarding(),
   };
 }
 
@@ -142,7 +146,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           refresh();
         }
       },
-      exportDb: (kind) => repo[kind].export(),
+      exportDb: (kind) => exportFile(kind, repo[kind]),
       importDb: async (bytes, kind) => replace(await openDbsFromBytes(bytes, kind)),
       addPrices: async (bytes, fileName) => {
         const file = await openPricesFile(bytes);
@@ -153,7 +157,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           refresh();
         }
       },
-      clearDb: async (kinds) => void (await replace(await openFreshDbs(kinds))),
+      clearDb: async (kinds, seed) => void (await replace(await openFreshDbs(kinds, seed))),
     };
   }, [repo, snap, attach]);
 

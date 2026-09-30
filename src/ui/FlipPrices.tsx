@@ -49,7 +49,7 @@ export function PricesCard({ r }: { r: Row }) {
   const recent = [...r.snaps].reverse().slice(0, LIST_LIMIT);
 
   return (
-    <div className="prices-card">
+    <div className="prices-card" data-tour="flip-prices">
       <h4>AH prices ({r.settings.ahType === 'neutral' ? 'neutral' : 'faction'})</h4>
       <form
         className="record-form"

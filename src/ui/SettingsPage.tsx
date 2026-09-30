@@ -8,6 +8,8 @@ import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { DisenchantPage } from './DisenchantPage';
 import { Icon, type IconName } from './icons';
+import { useTour } from './tour/Tour';
+import type { TourId } from '../db/repo';
 
 const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal', prices: 'prices' };
 const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
@@ -48,6 +50,7 @@ const SECTIONS = [
   { key: 'general', label: 'General', sub: 'Auction house, prices, time', Section: GeneralSettings },
   { key: 'data', label: 'Data', sub: 'Wowhead, backups', Section: DataSettings },
   { key: 'disenchant', label: 'Disenchant rules', sub: 'Seeded, rarely edited', Section: DisenchantPage },
+  { key: 'tutorials', label: 'Tutorials', sub: 'Guided tours', Section: TutorialSettings },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]['key'];
@@ -271,19 +274,21 @@ function DataSettings() {
   const [progress, setProgress] = useState<string | null>(null);
   const [clearMsg, setClearMsg] = useState<string | null>(null);
 
-  const clear = async (kinds: DbKind[]) => {
+  /** Reset puts game data back to the starter set, clear leaves it empty. Other data is emptied either way. */
+  const clear = async (kinds: DbKind[], reset = false) => {
     const what = listText(kinds.map((k) => `${KIND_LABEL[k]} (${KIND_CONTENTS[k]})`));
-    if (!confirm(`Delete all ${what} in this browser? This cannot be undone. Export first if you want a backup.`)) return;
+    const after = kinds.includes('data') ? (reset ? ' Game data goes back to the starter set.' : ' Game data is left empty.') : '';
+    if (!confirm(`Delete all ${what} in this browser?${after} This cannot be undone. Export first if you want a backup.`)) return;
     try {
-      await clearDb(kinds);
-      setClearMsg(`Cleared ${listText(kinds.map((k) => KIND_LABEL[k]))}.`);
+      await clearDb(kinds, reset);
+      setClearMsg(`${reset ? 'Reset' : 'Cleared'} ${listText(kinds.map((k) => KIND_LABEL[k]))}.`);
     } catch (err) {
-      setClearMsg(`Clearing failed: ${errorText(err)}`);
+      setClearMsg(`${reset ? 'Resetting' : 'Clearing'} failed: ${errorText(err)}`);
     }
   };
 
-  const download = (kind: DbKind) => {
-    const bytes = exportDb(kind);
+  const download = async (kind: DbKind) => {
+    const bytes = await exportDb(kind);
     const blob = new Blob([bytes.slice().buffer], { type: 'application/vnd.sqlite3' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -320,7 +325,7 @@ function DataSettings() {
 
       <Panel title="Your data">
         <p className="small muted">
-          Everything is stored in this browser as three SQLite databases. Export all three for backups or to move to another machine.
+          Everything is stored in this browser as three SQLite databases. Export all three for backups or to move to another machine. Game data exports leave out the saved Wowhead tooltips.
         </p>
         <div className="data-kinds">
           {DATA_CARDS.map((c) => (
@@ -361,16 +366,97 @@ function DataSettings() {
 
       <Panel title="Danger zone" className="danger-zone">
         <p className="small muted">
-          Permanently delete data stored in this browser. Disenchant rules and settings go back to their defaults.
+          Permanently delete data stored in this browser. <b>Reset</b> puts game data back to the starter set (professions 1 to 150). <b>Clear</b> leaves it
+          empty. Disenchant rules and settings go back to their defaults either way.
         </p>
-        <div className="add-row">
-          <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
-          <button className="danger" onClick={removeAdded}>Remove added prices</button>
-          <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
-          <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
-          <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>
-          {clearMsg && <span className="small muted">{clearMsg}</span>}
-        </div>
+        <table className="form-table danger-table">
+          <tbody>
+            <tr>
+              <th>Game data</th>
+              <td>
+                <button className="danger" onClick={() => clear(['data'], true)}>Reset game data</button>
+                <button className="danger" onClick={() => clear(['data'])}>Clear game data</button>
+              </td>
+            </tr>
+            <tr>
+              <th>AH prices</th>
+              <td>
+                <button className="danger" onClick={removeAdded}>Remove added prices</button>
+                <button className="danger" onClick={() => clear(['prices'])}>Clear AH prices</button>
+              </td>
+            </tr>
+            <tr>
+              <th>Personal data</th>
+              <td>
+                <button className="danger" onClick={() => clear(['user'])}>Clear personal data</button>
+              </td>
+            </tr>
+            <tr>
+              <th>Everything</th>
+              <td>
+                <button className="danger" onClick={() => clear(['data', 'prices', 'user'], true)}>Reset all data</button>
+                <button className="danger" onClick={() => clear(['data', 'prices', 'user'])}>Clear all data</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {clearMsg && <p className="small muted">{clearMsg}</p>}
+      </Panel>
+    </div>
+  );
+}
+
+const TUTORIALS: { tour: TourId; title: string; about: string }[] = [
+  { tour: 'workflow', title: 'Build a workflow', about: 'Builds the DE shuffle step by step on the Workflows page, and explains the results, units, batches and prices.' },
+  { tour: 'flip', title: 'The AH flipper', about: 'Favorites and workflow items, the quick calculator, the AH price tracker and the ledger.' },
+];
+
+function TutorialSettings() {
+  const t = useTour();
+  return (
+    <div className="stack narrow">
+      <Panel title="Tutorials">
+        <p className="small muted">
+          Guided tours that point at the real controls: do what a step asks and it moves on. Close one any time. The <a href="#start">Get started</a> page has
+          the full introduction.
+        </p>
+        <table className="form-table tutorials">
+          <tbody>
+            <tr>
+              <th>
+                Get started walkthrough
+                <span className={`small ${t.onboarding.completed ? 'pos' : 'muted'}`}> {t.onboarding.completed ? 'complete' : 'not complete'}</span>
+                <p className="small muted">The whole introduction: starter data, both tours, keeping data fresh, settings and backups. Starting over resets both tours too.</p>
+              </th>
+              <td>
+                {t.onboarding.completed ? (
+                  <button onClick={() => confirm('Start the Get started walkthrough over? Your workflows and data stay as they are.') && t.restartWalkthrough()}>
+                    Start over
+                  </button>
+                ) : (
+                  <a className="button" href="#start">
+                    Open
+                  </a>
+                )}
+              </td>
+            </tr>
+            {TUTORIALS.map(({ tour, title, about }) => {
+              const status = t.onboarding.tours[tour];
+              return (
+                <tr key={tour}>
+                  <th>
+                    {title}
+                    <span className={`small ${status === 'done' ? 'pos' : 'muted'}`}> {status === 'done' ? 'done' : status === 'skipped' ? 'skipped' : 'not started'}</span>
+                    <p className="small muted">{about}</p>
+                  </th>
+                  <td>
+                    <button onClick={() => t.start(tour)}>{t.onboarding.active?.tour === tour ? 'Restart' : status === 'new' ? 'Start' : 'Start again'}</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </Panel>
     </div>
   );

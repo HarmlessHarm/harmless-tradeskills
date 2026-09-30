@@ -385,9 +385,22 @@ export function fmtQty(n: number): string {
   return n.toFixed(n < 1 ? 3 : 2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-export function Panel({ title, actions, children, className = '' }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+export function Panel({
+  title,
+  actions,
+  children,
+  className = '',
+  tour,
+}: {
+  title?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  /** Anchor for the guided tours. */
+  tour?: string;
+}) {
   return (
-    <section className={`panel ${className}`}>
+    <section className={`panel ${className}`} data-tour={tour}>
       {(title || actions) && (
         <header className="panel-head">
           {title && <h2>{title}</h2>}
