@@ -35,6 +35,9 @@ export const useTour = () => {
 };
 
 const tab = () => window.location.hash.slice(1).split('/')[0];
+/** Where a tour returns to: Get started, or once the walkthrough is complete (and out of the menu) Settings > Tutorials. */
+export const homeHash = (o: Onboarding) => (o.completed ? 'settings/tutorials' : 'start');
+
 export const tourEl = (target: string) => document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
 
 export function TourProvider({ children }: { children: ReactNode }) {
@@ -157,7 +160,7 @@ function TourRunner() {
       onPause={tour.pause}
       onSkip={() => {
         tour.end(false);
-        window.location.hash = 'start';
+        window.location.hash = homeHash(store.onboarding);
       }}
     />
   );

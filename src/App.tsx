@@ -48,6 +48,9 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, [fallback]);
   const Page: ComponentType<{ sub?: string }> = TABS.find((t) => t.key === tab)!.Page;
+  // After the walkthrough, Get started leaves the menu (with its divider); the page stays reachable
+  // from Settings > Tutorials.
+  const shown = TABS.filter((t) => t.key !== 'start' || !onboarding.completed);
 
   return (
     <TourProvider>
@@ -58,9 +61,9 @@ export function App() {
             Harmless Tradeskills
           </div>
           <nav className="tabs">
-            {TABS.map((t) => (
+            {shown.map((t, i) => (
               <Fragment key={t.key}>
-                {'divider' in t && <span className="tab-divider" aria-hidden />}
+                {'divider' in t && i > 0 && <span className="tab-divider" aria-hidden />}
                 <a href={`#${t.key}`} className={t.key === tab ? 'on' : ''}>
                   {t.key === 'settings' && <Icon name="cog" />}
                   {t.label}

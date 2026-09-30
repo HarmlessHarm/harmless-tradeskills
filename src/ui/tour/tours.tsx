@@ -4,7 +4,7 @@ import { ahKey } from '../../engine/prices';
 import type { Workflow } from '../../engine/types';
 import { buySourceFor } from '../../engine/workflow';
 import type { useStore } from '../../state/store';
-import type { useTour } from './Tour';
+import { homeHash, type useTour } from './Tour';
 
 export interface TourCtx {
   store: ReturnType<typeof useStore>;
@@ -243,12 +243,12 @@ export const TOURS: Record<TourId, TourStep[]> = {
           {RESTART}
         </>
       ),
-      actions: ({ tour }) => (
+      actions: ({ tour, store }) => (
         <>
           <button
             onClick={() => {
               tour.end(true, { skip: 'flip' });
-              window.location.hash = 'start';
+              window.location.hash = homeHash(store.onboarding);
             }}
           >
             Skip for now
@@ -370,21 +370,24 @@ export const TOURS: Record<TourId, TourStep[]> = {
       page: 'flip',
       target: null,
       title: "That's the AH flipper",
-      body: (
-        <>
-          <p>Back on Get started: how to keep the data fresh, what is in Settings, and how to back up.</p>
-          {RESTART}
-        </>
-      ),
-      actions: ({ tour }) => (
+      body: ({ store }) =>
+        store.onboarding.completed ? (
+          RESTART
+        ) : (
+          <>
+            <p>Back on Get started: how to keep the data fresh, what is in Settings, and how to back up.</p>
+            {RESTART}
+          </>
+        ),
+      actions: ({ tour, store }) => (
         <button
           className="primary"
           onClick={() => {
             tour.end(true);
-            window.location.hash = 'start';
+            window.location.hash = homeHash(store.onboarding);
           }}
         >
-          Back to Get started
+          {store.onboarding.completed ? 'Done' : 'Back to Get started'}
         </button>
       ),
     },
