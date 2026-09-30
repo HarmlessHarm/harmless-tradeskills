@@ -3,7 +3,6 @@ import { effectiveRecipe } from '../engine/items';
 import { firstTier, type Recipe, type RecipeFields, type RecipeOutput, type RecipeRecord, type RecipeSource } from '../engine/types';
 import { learnedFromText, professionOptions, SOURCE_LABELS } from '../professions';
 import { SkillLevels } from './skill';
-import { setProfession } from '../state/actions';
 import { importRecipe } from '../state/importer';
 import { useStore } from '../state/store';
 import { tooltipText, wowheadUrl } from '../wowhead/adapter';
@@ -29,8 +28,6 @@ export function RecipesPage() {
   const [profFilter, setProfFilter] = useState<string>(ALL);
   const [bulk, setBulk] = useState(false);
   const sort = useSort<RecipeSortKey>('name');
-  const [bulkProf, setBulkProf] = useState('');
-  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
 
   const itemName = (id: number) => engine.items.get(id)?.name.toLowerCase() ?? '';
   const createdLevel = (rec: Recipe) => {
@@ -76,22 +73,6 @@ export function RecipesPage() {
   );
   const visibleKeys = rows.map(({ r }) => r.id);
   const filtering = q !== '' || profFilter !== ALL;
-
-  /** Bulk edit: set or clear the profession on every selected recipe. */
-  const applyProfession = () => {
-    const profession = bulkProf.trim() || null;
-    const records = recipeRecords.filter((r) => sel.has(r.id));
-    const changed = mutate((repo) => setProfession(repo, records, profession));
-    // Keep an open editor's draft in step, so saving it later does not undo this.
-    if (editing !== null && sel.has(editing)) {
-      edit.update((r) => {
-        const overrides = { ...r.overrides };
-        delete overrides.profession;
-        return { ...r, imported: { ...r.imported, profession }, overrides };
-      });
-    }
-    setBulkMsg(`${profession ? `Set ${profession}` : 'Cleared profession'} on ${changed} recipe${changed === 1 ? '' : 's'}`);
-  };
 
   const remove = (ids: string[]) => {
     if (ids.length === 0) return;
@@ -175,33 +156,8 @@ export function RecipesPage() {
         <SelectionBar
           count={sel.selected.size}
           onDelete={() => remove([...sel.selected])}
-          onClear={() => {
-            sel.clear();
-            setBulkMsg(null);
-          }}
-        >
-          <span className="bulk-edit">
-            <input
-              className="short-input"
-              list="bulk-edit-professions"
-              placeholder="Profession"
-              value={bulkProf}
-              onChange={(e) => {
-                setBulkProf(e.target.value);
-                setBulkMsg(null);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && applyProfession()}
-              aria-label="Profession for selected recipes"
-            />
-            <datalist id="bulk-edit-professions">
-              {professionOptions(usedProfessions).map((p) => (
-                <option key={p} value={p} />
-              ))}
-            </datalist>
-            <button onClick={applyProfession}>{bulkProf.trim() ? 'Set profession' : 'Clear profession'}</button>
-            {bulkMsg && <span className="small muted">{bulkMsg}</span>}
-          </span>
-        </SelectionBar>
+          onClear={sel.clear}
+        />
         <div className="table-wrap">
           <table className="table">
             <thead>
