@@ -162,6 +162,7 @@ export function FlipPage() {
     <div className="stack">
       <Summary rows={rows} config={config} />
       <Panel
+        tour="flip-watchlist"
         title="Watchlist"
         actions={
           <>
@@ -187,7 +188,9 @@ export function FlipPage() {
               />
               %
             </label>
-            <ItemPicker value={adding} onChange={add} placeholder="Add item to watch" />
+            <span data-tour="flip-add">
+              <ItemPicker value={adding} onChange={add} placeholder="Add item to watch" />
+            </span>
           </>
         }
       >
@@ -227,6 +230,7 @@ export function FlipPage() {
                         className={`watch-row ${isOpen ? 'editing' : ''} ${leaveCls}`}
                         onClick={() => setOpen(isOpen ? null : r.watch.itemId)}
                         aria-expanded={isOpen}
+                        data-tour={`flip-row-${r.watch.itemId}`}
                       >
                         <td className="check">
                           <button
@@ -238,6 +242,7 @@ export function FlipPage() {
                             title={phase ? 'Keep in favorites' : starred ? 'Remove from favorites' : 'Add to favorites'}
                             aria-label={phase ? `Keep ${r.name} in favorites` : starred ? `Remove ${r.name} from favorites` : `Add ${r.name} to favorites`}
                             aria-pressed={starred}
+                            data-tour={`flip-star-${r.watch.itemId}`}
                           >
                             <span className="star-off" aria-hidden>
                               ☆
@@ -350,7 +355,7 @@ function Summary({ rows, config }: { rows: Row[]; config: Config }) {
   const allTime = rows.reduce((s, r) => s + r.ledger.realized, 0);
   const below = held.filter((r) => r.row.belowFloor).length;
   return (
-    <div className="summary-strip">
+    <div className="summary-strip" data-tour="flip-summary">
       <div className="stat">
         <span className="stat-label">Watching</span>
         <span className="stat-value">{rows.length} items</span>
@@ -429,7 +434,7 @@ function QuickCalc({
   const posting = mode === 'lot' ? (lot ? `one auction of ${settings.qty}` : 'one auction') : lot ? `${settings.qty} auctions of one` : 'one auction';
 
   return (
-    <div className="quick-calc">
+    <div className="quick-calc" data-tour="flip-calc">
       <div className="calc-inputs">
         <label>
           I see it at (each)

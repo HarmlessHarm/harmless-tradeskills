@@ -323,6 +323,14 @@ describe('price snapshots', () => {
 });
 
 describe('split databases', () => {
+  it('stores onboarding progress', async () => {
+    const repo = await freshRepo();
+    expect(repo.getOnboarding()).toEqual({ tours: { workflow: 'new', flip: 'new' }, active: null });
+    const active = { tour: 'workflow' as const, step: 3, afterId: 0, workflowId: 7 };
+    repo.saveOnboarding({ tours: { workflow: 'new', flip: 'skipped' }, active });
+    expect(repo.getOnboarding()).toEqual({ tours: { workflow: 'new', flip: 'skipped' }, active });
+  });
+
   it('opens the game data seed at the latest schema', async () => {
     const SQL = await initSqlJs();
     const data = new SQL.Database(readFileSync(new URL('./seed/gamedata.sqlite', import.meta.url)));

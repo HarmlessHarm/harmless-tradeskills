@@ -8,6 +8,8 @@ import { useStore } from '../state/store';
 import { errorText, MoneyInput, NumberInput, Panel, Segmented } from './common';
 import { DisenchantPage } from './DisenchantPage';
 import { Icon, type IconName } from './icons';
+import { useTour } from './tour/Tour';
+import type { TourId } from '../db/repo';
 
 const FILE_NAME: Record<DbKind, string> = { data: 'gamedata', user: 'personal', prices: 'prices' };
 const KIND_LABEL: Record<DbKind, string> = { data: 'game data', user: 'personal data', prices: 'AH prices' };
@@ -48,6 +50,7 @@ const SECTIONS = [
   { key: 'general', label: 'General', sub: 'Auction house, prices, time', Section: GeneralSettings },
   { key: 'data', label: 'Data', sub: 'Wowhead, backups', Section: DataSettings },
   { key: 'disenchant', label: 'Disenchant rules', sub: 'Seeded, rarely edited', Section: DisenchantPage },
+  { key: 'tutorials', label: 'Tutorials', sub: 'Guided tours', Section: TutorialSettings },
 ] as const;
 
 type SectionKey = (typeof SECTIONS)[number]['key'];
@@ -398,6 +401,44 @@ function DataSettings() {
           </tbody>
         </table>
         {clearMsg && <p className="small muted">{clearMsg}</p>}
+      </Panel>
+    </div>
+  );
+}
+
+const TUTORIALS: { tour: TourId; title: string; about: string }[] = [
+  { tour: 'workflow', title: 'Build a workflow', about: 'Builds the DE shuffle step by step on the Workflows page, and explains the results, units, batches and prices.' },
+  { tour: 'flip', title: 'The AH flipper', about: 'Favorites and workflow items, the quick calculator, the AH price tracker and the ledger.' },
+];
+
+function TutorialSettings() {
+  const t = useTour();
+  return (
+    <div className="stack narrow">
+      <Panel title="Tutorials">
+        <p className="small muted">
+          Guided tours that point at the real controls: do what a step asks and it moves on. Close one any time. The <a href="#start">Get started</a> page has
+          the full introduction.
+        </p>
+        <table className="form-table tutorials">
+          <tbody>
+            {TUTORIALS.map(({ tour, title, about }) => {
+              const status = t.onboarding.tours[tour];
+              return (
+                <tr key={tour}>
+                  <th>
+                    {title}
+                    <span className={`small ${status === 'done' ? 'pos' : 'muted'}`}> {status === 'done' ? 'done' : status === 'skipped' ? 'skipped' : 'not started'}</span>
+                    <p className="small muted">{about}</p>
+                  </th>
+                  <td>
+                    <button onClick={() => t.start(tour)}>{t.onboarding.active?.tour === tour ? 'Restart' : status === 'new' ? 'Start' : 'Start again'}</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </Panel>
     </div>
   );

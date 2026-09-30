@@ -1,7 +1,7 @@
 import type { Database } from 'sql.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { exportFile, openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
-import { type DbKind, type Dbs, Repo } from '../db/repo';
+import { type DbKind, type Dbs, type Onboarding, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
 import type { Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
 import type { Transaction } from '../engine/ledger';
@@ -22,6 +22,8 @@ export interface Snapshot {
   priceSnapshots: PriceSnapshot[];
   /** Flip ledger, oldest first (DEC-26). */
   transactions: Transaction[];
+  /** Progress through the guided tours. */
+  onboarding: Onboarding;
 }
 
 interface StoreValue extends Snapshot {
@@ -54,6 +56,7 @@ function readSnapshot(repo: Repo): Snapshot {
     flipFavorites: repo.listFlipFavorites(),
     priceSnapshots: repo.listSnapshots(),
     transactions: repo.listTransactions(),
+    onboarding: repo.getOnboarding(),
   };
 }
 

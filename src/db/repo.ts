@@ -29,6 +29,25 @@ export type Dbs = Record<DbKind, Database>;
 
 type Row = Record<string, SqlValue>;
 
+export type TourId = 'workflow' | 'flip';
+export type TourStatus = 'new' | 'done' | 'skipped';
+
+/** Where a new user is in the guided tours. Stored in personal data, so a reload picks up the tour again. */
+export interface Onboarding {
+  tours: Record<TourId, TourStatus>;
+  /** The tour being followed, if any. */
+  active: {
+    tour: TourId;
+    step: number;
+    /** Workflow tour: workflows with a higher id were made during the tour. */
+    afterId: number;
+    /** Workflow tour: the workflow the user made in it, once they press New. */
+    workflowId: number | null;
+  } | null;
+}
+
+export const NEW_ONBOARDING: Onboarding = { tours: { workflow: 'new', flip: 'new' }, active: null };
+
 const json = <T>(v: SqlValue, fallback: T): T => {
   if (typeof v !== 'string') return fallback;
   try {
@@ -565,6 +584,20 @@ export class Repo {
 
   deleteWorkflow(id: number): void {
     this.run('user', 'DELETE FROM workflows WHERE id = ?', [id]);
+  }
+
+  // Onboarding --------------------------------------------------------------
+
+  getOnboarding(): Onboarding {
+    const row = this.all('user', `SELECT value FROM settings WHERE key = 'onboarding'`)[0];
+    const stored = row ? json<Partial<Onboarding>>(row.value, {}) : {};
+    return { tours: { ...NEW_ONBOARDING.tours, ...stored.tours }, active: stored.active ?? null };
+  }
+
+  saveOnboarding(onboarding: Onboarding): void {
+    this.run('user', `INSERT INTO settings (key, value) VALUES ('onboarding', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, [
+      JSON.stringify(onboarding),
+    ]);
   }
 
   // Config ------------------------------------------------------------------

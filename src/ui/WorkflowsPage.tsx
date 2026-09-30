@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { anyItemId, findDisenchantRule } from '../engine/disenchant';
 import { QUALITY_NAMES, type AhType, type Item, type Quality, type Recipe, type Workflow, type WorkflowStep } from '../engine/types';
 import {
@@ -71,9 +71,13 @@ function newWorkflow(name: string, steps: WorkflowStep[] = [], notes = ''): Work
 
 const round3 = (n: number) => fmtQty(Math.round(n * 1000) / 1000);
 
-export function WorkflowsPage() {
+/** `sub` is a workflow id, from `#workflows/<id>`. */
+export function WorkflowsPage({ sub }: { sub?: string }) {
   const { workflows, engine, mutate, mutateAsync } = useStore();
-  const [selectedId, setSelectedId] = useState<number | null>(workflows[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<number | null>(sub ? Number(sub) : (workflows[0]?.id ?? null));
+  useEffect(() => {
+    if (sub) setSelectedId(Number(sub));
+  }, [sub]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -119,7 +123,9 @@ export function WorkflowsPage() {
       <aside className="sidebar">
         <div className="sidebar-head">
           <h2>Workflows</h2>
-          <button onClick={create}>New</button>
+          <button onClick={create} data-tour="wf-new">
+            New
+          </button>
         </div>
         {workflows.length === 0 && <p className="muted small">No workflows yet.</p>}
         <ul className="wf-list">
@@ -195,7 +201,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
   return (
     <div className="stack">
       <Panel
-        title={<input className="title-input" value={wf.name} onChange={(e) => save({ name: e.target.value })} aria-label="Workflow name" />}
+        title={<input className="title-input" value={wf.name} onChange={(e) => save({ name: e.target.value })} aria-label="Workflow name" data-tour="wf-name" />}
         actions={
           <button
             className="danger"
@@ -212,7 +218,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
       >
         <textarea className="notes" placeholder="Notes" value={wf.notes} onChange={(e) => save({ notes: e.target.value })} rows={2} />
         <div className="field-row">
-          <label>
+          <label data-tour="wf-unit">
             Per unit of
             <select value={wf.unitItemId ?? ''} onChange={(e) => save({ unitItemId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">
@@ -237,7 +243,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
               )}
             </select>
           </label>
-          <label>
+          <label data-tour="wf-batch">
             Batch size
             <NumberInput value={wf.batchSize} placeholder={String(config.defaultBatchSize)} min={1} step={1} onChange={(v) => save({ batchSize: v })} />
           </label>
@@ -264,7 +270,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
 
       {analysis.ok && analysis.buyLimit ? <BuyLimitResults analysis={analysis} limit={analysis.buyLimit} target={wf.targetGoldPerHour} /> : <Results analysis={analysis} />}
 
-      <Panel title="Steps">
+      <Panel title="Steps" tour="wf-steps">
         <ol className="steps">
           {wf.steps.map((step, i) => {
             const r = resolved[i];
@@ -332,7 +338,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
               />
             ))}
           </Panel>
-          <Panel title="Sell (per unit)">
+          <Panel title="Sell (per unit)" tour="wf-sell">
             <table className="table">
               <thead>
                 <tr>
@@ -410,7 +416,7 @@ function BuySection({
 }) {
   const total = inputs.reduce((sum, x) => sum + x.qtyPerBatch * (x.unitPrice ?? 0), 0);
   return (
-    <section className="buy-section">
+    <section className="buy-section" data-tour={`wf-buy-${source}`}>
       <h3 className="buy-section-head">
         <span>{source === 'ah' ? 'Auction House' : 'Vendor'}</span>
         <span title="Cost of the whole batch from this source">
@@ -443,12 +449,14 @@ function BuySection({
                 <td className="r">{fmtQty(x.qtyPerBatch)}</td>
                 <td>
                   {source === 'ah' ? (
-                    <div className="price-cell">
+                    <div className="price-cell" data-tour={`buy-${x.itemId}`}>
                       <AhPriceCell itemId={x.itemId} ahType={ahType} />
                       <AhPriceAge itemId={x.itemId} ahType={ahType} />
                     </div>
                   ) : (
-                    <VendorBuyCell itemId={x.itemId} />
+                    <span data-tour={`vendor-${x.itemId}`}>
+                      <VendorBuyCell itemId={x.itemId} />
+                    </span>
                   )}
                 </td>
                 <td className="r">
@@ -461,6 +469,7 @@ function BuySection({
                     onClick={() => onMove(x.itemId)}
                     title={`Buy from ${source === 'ah' ? 'a vendor' : 'the AH'} instead`}
                     aria-label={`Move to ${source === 'ah' ? 'vendor' : 'AH'}`}
+                    data-tour={`move-${x.itemId}`}
                   >
                     ⇄
                   </button>
@@ -489,6 +498,7 @@ function MakeButton({ itemId, onPick }: { itemId: number; onPick: (recipeId: str
         title={title}
         aria-label={title}
         aria-expanded={producers.length > 1 ? open : undefined}
+        data-tour={`make-${itemId}`}
         onClick={() => (producers.length === 1 ? onPick(producers[0].id) : setOpen(!open))}
         onBlur={() => setOpen(false)}
       >
@@ -521,7 +531,7 @@ function MakeButton({ itemId, onPick }: { itemId: number; onPick: (recipeId: str
 function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   if (!a.ok) {
     return (
-      <Panel className="results error-panel">
+      <Panel className="results error-panel" tour="wf-results">
         {a.errors.map((e, i) => (
           <p key={i}>{e}</p>
         ))}
@@ -530,7 +540,7 @@ function Results({ analysis: a }: { analysis: WorkflowAnalysis }) {
   }
   const sim = a.simulation;
   return (
-    <Panel className="results">
+    <Panel className="results" tour="wf-results">
       <div className="kpis">
         {sim?.deterministic ? (
           <>
@@ -615,7 +625,7 @@ function BuyLimitResults({ analysis: a, limit, target }: { analysis: WorkflowAna
   const perItem = limit.qtyPerUnit === 1 ? 'per item' : `per item (${round3(limit.qtyPerUnit)} per unit)`;
   const price = (v: number | null) => (v !== null && v < 0 ? <span className="neg">not profitable</span> : <Money value={v} />);
   return (
-    <Panel className="results">
+    <Panel className="results" tour="wf-results">
       <div className="kpis">
         <div className="kpi kpi-worst">
           <span className="kpi-label">Safe max buy price</span>
@@ -750,7 +760,7 @@ function AddStep({ onAdd, outputs }: { onAdd: (step: WorkflowStep) => void; outp
       : null;
 
   return (
-    <div className="add-step">
+    <div className="add-step" data-tour="wf-add-step">
       <Segmented
         value={mode}
         options={[

@@ -69,7 +69,7 @@ export function LedgerCard({ r, config }: { r: Row; config: Config }) {
   const recent = [...r.txs].reverse().slice(0, LIST_LIMIT);
 
   return (
-    <div className="ledger-card">
+    <div className="ledger-card" data-tour="flip-ledger">
       <div className="card-head">
         <h4>Ledger</h4>
         <Segmented<CostMethod>

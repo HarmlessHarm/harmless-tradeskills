@@ -6,6 +6,7 @@ Product docs live in [`docs/`](docs): [PRD](docs/prd.md), [architecture](docs/ar
 
 ## What it does
 
+- **Get started and tours**: a new browser opens on Get started. Two guided tours point at the real controls and move on as you go: one builds the DE shuffle by hand on Workflows, one walks through the AH flipper. Tour steps live in `src/ui/tour/tours.tsx` and anchor to `data-tour` attributes; restart them from Settings > Tutorials. Real Wowhead screenshots for the page go in `public/onboarding/` (`wowhead-bulk.png`, `wowhead-vendor.png`); without them a drawing is shown.
 - **Starter data**: a new browser starts with recipes for every profession up to skill 150, their items and some vendor prices, from `src/db/seed/gamedata.sqlite`. Settings > Data can reset game data back to it, or clear it. Game data exports leave out the saved Wowhead tooltips, so an export can replace the seed as is.
 - **Workflows**: saved routes such as the DE shuffle (linen to bolts to gloves, disenchant, dust and essence into oil and wands). The engine links steps, solves runs per unit, and shows profit per unit, time, gold per hour and a simulated P5 / median / P95 for a batch, with the worst case up front.
 - **Buy price limits**: a "Disenchant any" step (e.g. any uncommon armor, item level 1-15) turns a workflow into a buy price calculator: the most to pay per item to break even, to stay safe in the worst case, or to still earn a target gold per hour.

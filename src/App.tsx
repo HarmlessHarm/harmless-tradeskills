@@ -4,14 +4,18 @@ import { Icon } from './ui/icons';
 import { ItemsPage } from './ui/ItemsPage';
 import { RecipesPage } from './ui/RecipesPage';
 import { SettingsPage } from './ui/SettingsPage';
+import { TourProvider } from './ui/tour/Tour';
+import { WelcomePage } from './ui/WelcomePage';
 import { WorkflowsPage } from './ui/WorkflowsPage';
+import { useStore } from './state/store';
 
 /**
- * `divider` starts a new group: workflows and flips are personal data, items and recipes game
- * data, and settings covers both.
+ * `divider` starts a new group: getting started stands alone, workflows and flips are personal
+ * data, items and recipes game data, and settings covers both.
  */
 const TABS = [
-  { key: 'workflows', label: 'Workflows', Page: WorkflowsPage },
+  { key: 'start', label: 'Get started', Page: WelcomePage },
+  { key: 'workflows', label: 'Workflows', Page: WorkflowsPage, divider: true },
   { key: 'flip', label: 'AH flip', Page: FlipPage },
   { key: 'items', label: 'Items', Page: ItemsPage, divider: true },
   { key: 'recipes', label: 'Recipes', Page: RecipesPage },
@@ -20,47 +24,55 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key'];
 
-/** The hash is `#tab` or `#tab/sub`, where sub picks a section inside the tab. */
-const fromHash = (): { tab: TabKey; sub?: string } => {
+/**
+ * The hash is `#tab` or `#tab/sub`, where sub picks a section inside the tab. Without a known tab
+ * the page opens on `fallback`.
+ */
+const fromHash = (fallback: TabKey): { tab: TabKey; sub?: string } => {
   const h = window.location.hash.slice(1);
   // Disenchant rules used to be a top-level tab.
   if (h === 'disenchant') return { tab: 'settings', sub: 'disenchant' };
   const [key, sub] = h.split('/');
-  const tab = (TABS.find((t) => t.key === key)?.key ?? 'workflows') as TabKey;
+  const tab = (TABS.find((t) => t.key === key)?.key ?? fallback) as TabKey;
   return { tab, sub };
 };
 
 export function App() {
-  const [{ tab, sub }, setRoute] = useState(fromHash);
+  const { workflows, onboarding } = useStore();
+  // Someone who has not started yet lands on getting started, everyone else on their workflows.
+  const [fallback] = useState<TabKey>(workflows.length === 0 && onboarding.tours.workflow === 'new' ? 'start' : 'workflows');
+  const [{ tab, sub }, setRoute] = useState(() => fromHash(fallback));
   useEffect(() => {
-    const onHash = () => setRoute(fromHash());
+    const onHash = () => setRoute(fromHash(fallback));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
-  }, []);
+  }, [fallback]);
   const Page: ComponentType<{ sub?: string }> = TABS.find((t) => t.key === tab)!.Page;
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="coin" aria-hidden />
-          Harmless Tradeskills
-        </div>
-        <nav className="tabs">
-          {TABS.map((t) => (
-            <Fragment key={t.key}>
-              {'divider' in t && <span className="tab-divider" aria-hidden />}
-              <a href={`#${t.key}`} className={t.key === tab ? 'on' : ''}>
-                {t.key === 'settings' && <Icon name="cog" />}
-                {t.label}
-              </a>
-            </Fragment>
-          ))}
-        </nav>
-      </header>
-      <main className="content">
-        <Page sub={sub} />
-      </main>
-    </div>
+    <TourProvider>
+      <div className="app">
+        <header className="topbar">
+          <div className="brand">
+            <span className="coin" aria-hidden />
+            Harmless Tradeskills
+          </div>
+          <nav className="tabs">
+            {TABS.map((t) => (
+              <Fragment key={t.key}>
+                {'divider' in t && <span className="tab-divider" aria-hidden />}
+                <a href={`#${t.key}`} className={t.key === tab ? 'on' : ''}>
+                  {t.key === 'settings' && <Icon name="cog" />}
+                  {t.label}
+                </a>
+              </Fragment>
+            ))}
+          </nav>
+        </header>
+        <main className="content">
+          <Page sub={sub} />
+        </main>
+      </div>
+    </TourProvider>
   );
 }
