@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Onboarding, TourId } from '../../db/repo';
+import { NEW_ONBOARDING, type Onboarding, type TourId } from '../../db/repo';
 import type { Workflow } from '../../engine/types';
 import { useStore } from '../../state/store';
 import { TOURS, type TourCtx, type TourStep } from './tours';
@@ -16,6 +16,14 @@ interface TourValue {
   /** Ends the active tour; `done` marks it finished, otherwise skipped. `then` skips or starts another tour. */
   end: (done: boolean, then?: { start?: TourId; skip?: TourId }) => void;
   skip: (tour: TourId) => void;
+  /** Hides the active tour, keeping its place; `resume` shows it again on its page. */
+  pause: () => void;
+  resume: () => void;
+  /** Marks a read-only Get started step as read, or unread. */
+  markRead: (id: string, read: boolean) => void;
+  /** Finishes the Get started walkthrough, or starts it over (all steps unread, tours new). */
+  complete: () => void;
+  restartWalkthrough: () => void;
 }
 
 const TourContext = createContext<TourValue | null>(null);
@@ -35,30 +43,46 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const save = useCallback((next: Onboarding) => mutate((repo) => repo.saveOnboarding(next)), [mutate]);
   const begin = (tour: TourId): Onboarding['active'] => ({ tour, step: 0, afterId: Math.max(0, ...workflows.map((w) => w.id)), workflowId: null });
 
-  const value = useMemo<TourValue>(
-    () => ({
-      onboarding,
+  const value = useMemo<TourValue>(() => {
+    const o = onboarding;
+    const pageOf = (tour: TourId, step: number) => {
+      const p = TOURS[tour][step]?.page ?? TOURS[tour][0].page;
+      return p === 'workflows' && o.active?.workflowId ? `workflows/${o.active.workflowId}` : p;
+    };
+    return {
+      onboarding: o,
       start: (tour) => {
-        save({ ...onboarding, active: begin(tour) });
+        save({ ...o, active: begin(tour) });
         window.location.hash = TOURS[tour][0].page;
       },
       end: (done, then = {}) => {
-        const a = onboarding.active;
+        const a = o.active;
         if (!a) return;
-        const tours = { ...onboarding.tours, [a.tour]: done ? 'done' : 'skipped' };
+        const tours = { ...o.tours, [a.tour]: done ? 'done' : 'skipped' };
         if (then.skip) tours[then.skip] = 'skipped';
-        save({ tours, active: then.start ? begin(then.start) : null });
+        save({ ...o, tours, active: then.start ? begin(then.start) : null });
         if (then.start) window.location.hash = TOURS[then.start][0].page;
       },
-      skip: (tour) => save({ tours: { ...onboarding.tours, [tour]: 'skipped' }, active: onboarding.active?.tour === tour ? null : onboarding.active }),
-    }),
-    [onboarding, workflows, save], // eslint-disable-line react-hooks/exhaustive-deps
-  );
+      skip: (tour) => save({ ...o, tours: { ...o.tours, [tour]: 'skipped' }, active: o.active?.tour === tour ? null : o.active }),
+      pause: () => o.active && save({ ...o, active: { ...o.active, paused: true } }),
+      resume: () => {
+        if (!o.active) return;
+        save({ ...o, active: { ...o.active, paused: false } });
+        window.location.hash = pageOf(o.active.tour, o.active.step);
+      },
+      markRead: (id, read) => save({ ...o, read: read ? [...new Set([...o.read, id])] : o.read.filter((r) => r !== id) }),
+      complete: () => save({ ...o, completed: true, active: null }),
+      restartWalkthrough: () => {
+        save({ ...NEW_ONBOARDING });
+        window.location.hash = 'start';
+      },
+    };
+  }, [onboarding, workflows, save]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <TourContext.Provider value={value}>
       {children}
-      {onboarding.active && <TourRunner />}
+      {onboarding.active && !onboarding.active.paused && <TourRunner />}
     </TourContext.Provider>
   );
 }
@@ -130,7 +154,11 @@ function TourRunner() {
           ? () => go(Math.max(0, active.step - 1), {}, -1)
           : undefined
       }
-      onClose={() => tour.end(false)}
+      onPause={tour.pause}
+      onSkip={() => {
+        tour.end(false);
+        window.location.hash = 'start';
+      }}
     />
   );
 }
@@ -168,7 +196,8 @@ function Bubble({
   reviewing,
   onNext,
   onBack,
-  onClose,
+  onPause,
+  onSkip,
 }: {
   step: TourStep;
   /** Reached with Back: show Next even on a step that moves on by itself. */
@@ -179,7 +208,9 @@ function Bubble({
   count: number;
   onNext: () => void;
   onBack?: () => void;
-  onClose: () => void;
+  onPause: () => void;
+  /** Skips the rest of this tour (a section of Get started). */
+  onSkip: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<Box | null>(null);
@@ -254,7 +285,7 @@ function Bubble({
           <span className="tour-count small muted">
             {index + 1} of {count}
           </span>
-          <button className="icon-btn" onClick={onClose} aria-label="Close the tour" title="Close the tour">
+          <button className="icon-btn" onClick={onPause} aria-label="Pause the tour" title="Pause: continue it later from Get started">
             ×
           </button>
         </div>
@@ -270,6 +301,11 @@ function Bubble({
           {onBack && (
             <button className="link-btn small" onClick={onBack}>
               Back
+            </button>
+          )}
+          {!step.actions && (
+            <button className="link-btn small muted" onClick={onSkip} title="Skip the rest of this tour and go back to Get started">
+              Skip this section
             </button>
           )}
           <span className="grow" />

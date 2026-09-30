@@ -325,10 +325,15 @@ describe('price snapshots', () => {
 describe('split databases', () => {
   it('stores onboarding progress', async () => {
     const repo = await freshRepo();
-    expect(repo.getOnboarding()).toEqual({ tours: { workflow: 'new', flip: 'new' }, active: null });
-    const active = { tour: 'workflow' as const, step: 3, afterId: 0, workflowId: 7 };
-    repo.saveOnboarding({ tours: { workflow: 'new', flip: 'skipped' }, active });
-    expect(repo.getOnboarding()).toEqual({ tours: { workflow: 'new', flip: 'skipped' }, active });
+    expect(repo.getOnboarding()).toEqual({ tours: { workflow: 'new', flip: 'new' }, active: null, read: [], completed: false });
+    const saved = {
+      tours: { workflow: 'new' as const, flip: 'skipped' as const },
+      active: { tour: 'workflow' as const, step: 3, afterId: 0, workflowId: 7, paused: true },
+      read: ['start'],
+      completed: false,
+    };
+    repo.saveOnboarding(saved);
+    expect(repo.getOnboarding()).toEqual(saved);
   });
 
   it('opens the game data seed at the latest schema', async () => {

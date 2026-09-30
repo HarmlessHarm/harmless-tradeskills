@@ -40,7 +40,7 @@ const fromHash = (fallback: TabKey): { tab: TabKey; sub?: string } => {
 export function App() {
   const { workflows, onboarding } = useStore();
   // Someone who has not started yet lands on getting started, everyone else on their workflows.
-  const [fallback] = useState<TabKey>(workflows.length === 0 && onboarding.tours.workflow === 'new' ? 'start' : 'workflows');
+  const [fallback] = useState<TabKey>(!onboarding.completed && workflows.length === 0 && onboarding.tours.workflow === 'new' ? 'start' : 'workflows');
   const [{ tab, sub }, setRoute] = useState(() => fromHash(fallback));
   useEffect(() => {
     const onHash = () => setRoute(fromHash(fallback));

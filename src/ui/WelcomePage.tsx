@@ -11,7 +11,9 @@ import { useTour } from './tour/Tour';
  */
 export function WelcomePage() {
   const { itemRecords, recipeRecords, config } = useStore();
-  const { onboarding } = useTour();
+  const tour = useTour();
+  const { onboarding } = tour;
+  const allDone = READ_STEPS.every((id) => onboarding.read.includes(id)) && TOUR_IDS.every((t) => onboarding.tours[t] !== 'new') && !onboarding.active;
   const vendorPrices = itemRecords.filter((r) => r.vendorBuy !== null).length;
   const professions = new Set(recipeRecords.map((r) => r.imported.profession).filter(Boolean)).size;
 
@@ -28,7 +30,15 @@ export function WelcomePage() {
       </Panel>
 
       <ol className="onboard">
-        <Step n={1} title="A head start">
+        {onboarding.completed && (
+          <li className="onboard-note">
+            <p className="small">
+              <span className="pos">Walkthrough complete.</span> Everything is still here to read back. Start it over any time from{' '}
+              <a href="#settings/tutorials">Settings &gt; Tutorials</a>.
+            </p>
+          </li>
+        )}
+        <Step n={1} id="start" title="A head start">
           <p>
             We took the liberty of starting you off with the recipes of every profession from 1 to 150: <b>{recipeRecords.length} recipes</b>
             {professions > 0 && <> across {professions} professions</>}, the <b>{itemRecords.length} items</b> they use and make, and{' '}
@@ -50,7 +60,7 @@ export function WelcomePage() {
           </p>
         </TourStep>
 
-        <Step n={4} title="Keeping the data fresh">
+        <Step n={4} id="data" title="Keeping the data fresh">
           <p>
             The starter recipes and items come from Wowhead as they were when we made them. WoW Forever is still changing, so some will go out of date. Refresh them in
             Settings &gt; Data, and add what is missing from Wowhead in two ways:
@@ -102,7 +112,7 @@ export function WelcomePage() {
           <p className="small muted">You can also paste a single Wowhead link or ID on Items or Recipes, and change any field by hand. Your changes survive a refresh.</p>
         </Step>
 
-        <Step n={5} title="Settings and your data">
+        <Step n={5} id="settings" title="Settings and your data">
           <ul className="settings-list">
             <li>
               <a href="#settings/general">General</a>: the auction house rules (cut, deposits, how items are posted), which AH price workflows use, and time overheads.{' '}
@@ -140,26 +150,98 @@ export function WelcomePage() {
           </p>
         </Step>
 
-        <Step n={6} title="Still in beta">
+        <Step n={6} id="beta" title="Still in beta">
           <p>
             This is a beta. The numbers are only as good as the data behind them: AH rules, disenchant chances and recipes may be off, and features, layouts and file
             formats can still change. Keep a backup, check anything important in game, and expect rough edges.
           </p>
         </Step>
       </ol>
+
+      {allDone && !onboarding.completed && (
+        <Panel className="walkthrough-done">
+          <h2>That's everything</h2>
+          <p>You have seen every part of Harmless Tradeskills. Finish the walkthrough and get to work.</p>
+          <div className="add-row">
+            <button
+              className="primary"
+              onClick={() => {
+                tour.complete();
+                window.location.hash = 'workflows';
+              }}
+            >
+              Complete walkthrough
+            </button>
+            <span className="small muted">
+              You can start this walkthrough again any time from <a href="#settings/tutorials">Settings &gt; Tutorials</a>.
+            </span>
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }
 
-function Step({ n, title, done = false, children }: { n: number; title: string; done?: boolean; children: ReactNode }) {
+/** Read-only steps with a "Got it" button, by id. */
+const READ_STEPS = ['start', 'data', 'settings', 'beta'];
+const TOUR_IDS: TourId[] = ['workflow', 'flip'];
+
+/**
+ * One numbered step. A finished step collapses to its title, and can be opened again. With `id` it
+ * is a read-only step: "Got it" marks it read. Tour steps pass their own state and buttons instead.
+ */
+function Step({
+  n,
+  id,
+  title,
+  done: doneProp,
+  skipped = false,
+  note,
+  children,
+}: {
+  n: number;
+  id?: string;
+  title: string;
+  done?: boolean;
+  /** Finished by skipping: a grey check instead of a green one. */
+  skipped?: boolean;
+  /** Shown next to the title when collapsed. */
+  note?: ReactNode;
+  children: ReactNode;
+}) {
+  const t = useTour();
+  const done = doneProp ?? (id !== undefined && t.onboarding.read.includes(id));
+  const [open, setOpen] = useState(false);
+  const collapsed = done && !open;
   return (
-    <li className={`onboard-step ${done ? 'done' : ''}`}>
+    <li className={`onboard-step ${done ? 'done' : ''} ${done && skipped ? 'skipped' : ''}`}>
       <span className="onboard-n" aria-hidden>
         {done ? '✓' : n}
       </span>
-      <section className="panel">
-        <h2>{title}</h2>
-        {children}
+      <section className={`panel ${collapsed ? 'collapsed' : ''}`}>
+        <div className="onboard-head">
+          <h2>{title}</h2>
+          {collapsed && note}
+          {done && (
+            <button className="link-btn small" onClick={() => setOpen(!open)} aria-expanded={open}>
+              {open ? 'Hide' : 'Show'}
+            </button>
+          )}
+        </div>
+        {!collapsed && children}
+        {!collapsed && id !== undefined && (
+          <div className="add-row">
+            {done ? (
+              <button className="link-btn small" onClick={() => t.markRead(id, false)}>
+                Mark as unread
+              </button>
+            ) : (
+              <button className="primary" onClick={() => t.markRead(id, true)}>
+                Got it
+              </button>
+            )}
+          </div>
+        )}
       </section>
     </li>
   );
@@ -169,28 +251,37 @@ const TOUR_PAGE: Record<TourId, string> = { workflow: 'Workflows', flip: 'AH fli
 
 function TourStep({ n, tour, status, title, children }: { n: number; tour: TourId; status: TourStatus; title: string; children: ReactNode }) {
   const t = useTour();
-  const running = t.onboarding.active?.tour === tour;
+  const active = t.onboarding.active?.tour === tour ? t.onboarding.active : null;
+  const finished = status !== 'new' && !active;
   return (
-    <Step n={n} title={title} done={status === 'done'}>
+    <Step
+      n={n}
+      title={title}
+      done={finished}
+      skipped={status === 'skipped'}
+      note={<span className={`small ${status === 'done' ? 'pos' : 'muted'}`}>{status === 'done' ? 'Done' : 'Skipped'}</span>}
+    >
       {children}
       <div className="add-row">
-        {running ? (
+        {active ? (
           <>
-            <a className="button primary" href={`#${tour === 'flip' ? 'flip' : 'workflows'}`}>
+            <button className="primary" onClick={t.resume}>
               Continue the tour
-            </a>
-            <button onClick={() => t.end(false)}>Stop the tour</button>
+            </button>
+            <button onClick={() => t.end(false)}>Skip this section</button>
+            <span className="small muted">
+              {active.paused ? 'Paused' : 'In progress'} at step {active.step + 1}.
+            </span>
           </>
         ) : (
           <>
-            <button className={status === 'done' ? '' : 'primary'} onClick={() => t.start(tour)}>
+            <button className={status === 'new' ? 'primary' : ''} onClick={() => t.start(tour)}>
               {status === 'done' ? 'Take the tour again' : status === 'skipped' ? 'Start the tour' : `Start on ${TOUR_PAGE[tour]}`}
             </button>
             {status === 'new' && <button onClick={() => t.skip(tour)}>Skip for now</button>}
+            {status === 'skipped' && <span className="small muted">Skipped. Start it here or from Settings &gt; Tutorials.</span>}
           </>
         )}
-        {status === 'skipped' && !running && <span className="small muted">Skipped. Start it here or from Settings &gt; Tutorials.</span>}
-        {status === 'done' && !running && <span className="small pos">Done</span>}
       </div>
     </Step>
   );

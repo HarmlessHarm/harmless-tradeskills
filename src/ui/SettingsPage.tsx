@@ -422,6 +422,24 @@ function TutorialSettings() {
         </p>
         <table className="form-table tutorials">
           <tbody>
+            <tr>
+              <th>
+                Get started walkthrough
+                <span className={`small ${t.onboarding.completed ? 'pos' : 'muted'}`}> {t.onboarding.completed ? 'complete' : 'not complete'}</span>
+                <p className="small muted">The whole introduction: starter data, both tours, keeping data fresh, settings and backups. Starting over resets both tours too.</p>
+              </th>
+              <td>
+                {t.onboarding.completed ? (
+                  <button onClick={() => confirm('Start the Get started walkthrough over? Your workflows and data stay as they are.') && t.restartWalkthrough()}>
+                    Start over
+                  </button>
+                ) : (
+                  <a className="button" href="#start">
+                    Open
+                  </a>
+                )}
+              </td>
+            </tr>
             {TUTORIALS.map(({ tour, title, about }) => {
               const status = t.onboarding.tours[tour];
               return (

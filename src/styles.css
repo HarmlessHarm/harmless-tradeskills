@@ -1841,3 +1841,39 @@ a.button.primary {
   font-weight: 400;
   margin: 2px 0 0;
 }
+.onboard-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.onboard-head h2 {
+  flex: 1;
+}
+.onboard-step .panel.collapsed {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.onboard-step .panel.collapsed h2 {
+  margin: 0;
+  color: var(--muted);
+}
+.onboard-step.done .onboard-n {
+  margin-top: 4px;
+}
+.onboard-note {
+  list-style: none;
+  padding-left: 44px;
+}
+.walkthrough-done {
+  border-color: #2f5a34;
+}
+@media (max-width: 640px) {
+  .onboard-note {
+    padding-left: 0;
+  }
+}
+.onboard-step.done.skipped .onboard-n {
+  background: var(--bg-2);
+  border-color: var(--line);
+  color: var(--muted);
+}

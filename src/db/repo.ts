@@ -43,10 +43,16 @@ export interface Onboarding {
     afterId: number;
     /** Workflow tour: the workflow the user made in it, once they press New. */
     workflowId: number | null;
+    /** Hidden for now; continued from Get started. */
+    paused?: boolean;
   } | null;
+  /** Read-only Get started steps the user marked as read. */
+  read: string[];
+  /** The user finished the Get started walkthrough. */
+  completed: boolean;
 }
 
-export const NEW_ONBOARDING: Onboarding = { tours: { workflow: 'new', flip: 'new' }, active: null };
+export const NEW_ONBOARDING: Onboarding = { tours: { workflow: 'new', flip: 'new' }, active: null, read: [], completed: false };
 
 const json = <T>(v: SqlValue, fallback: T): T => {
   if (typeof v !== 'string') return fallback;
@@ -591,7 +597,12 @@ export class Repo {
   getOnboarding(): Onboarding {
     const row = this.all('user', `SELECT value FROM settings WHERE key = 'onboarding'`)[0];
     const stored = row ? json<Partial<Onboarding>>(row.value, {}) : {};
-    return { tours: { ...NEW_ONBOARDING.tours, ...stored.tours }, active: stored.active ?? null };
+    return {
+      tours: { ...NEW_ONBOARDING.tours, ...stored.tours },
+      active: stored.active ?? null,
+      read: stored.read ?? [],
+      completed: stored.completed ?? false,
+    };
   }
 
   saveOnboarding(onboarding: Onboarding): void {
