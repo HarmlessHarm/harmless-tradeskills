@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { anyItemId, findDisenchantRule } from '../engine/disenchant';
+import { whoKnows } from '../engine/characters';
 import { QUALITY_NAMES, type AhType, type Item, type Quality, type Recipe, type Workflow, type WorkflowStep } from '../engine/types';
 import {
   analyzeWorkflow,
@@ -279,6 +280,7 @@ function WorkflowEditor({ wf, onDeleted }: { wf: Workflow; onDeleted: () => void
               <li key={i} className={r ? '' : 'broken'}>
                 <div className="step-main">
                   <span className="step-name">{describeStep(engine, step)}</span>
+                  {r && <StepCharacters recipe={r} />}
                   {r && (
                     <span className="step-io small">
                       {r.inputs.map((x, k) => (
@@ -946,4 +948,14 @@ function DisenchantSearch({ preferred, onPick }: { preferred: number[]; onPick: 
       }}
     />
   );
+}
+
+/** Which of your characters know a step's recipe (#21). Nothing when you have no characters. */
+function StepCharacters({ recipe }: { recipe: Recipe }) {
+  const { characters } = useStore();
+  if (characters.length === 0) return null;
+  if (!recipe.profession) return <span className="step-who small muted">Set the recipe's profession to see who knows it.</span>;
+  const who = whoKnows(characters, recipe);
+  if (who.length === 0) return <span className="step-who small warn">None of your characters knows this recipe.</span>;
+  return <span className="step-who small muted">Known by {who.map((c) => c.name).join(', ')}</span>;
 }

@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { exportFile, openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
 import { type DbKind, type Dbs, type Onboarding, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
-import type { Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
+import type { Character, Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
 import type { Transaction } from '../engine/ledger';
 import { ahKey } from '../engine/prices';
 import { currentAhPrices, type PriceSnapshot } from '../engine/snapshots';
@@ -24,6 +24,8 @@ export interface Snapshot {
   transactions: Transaction[];
   /** Progress through the guided tours. */
   onboarding: Onboarding;
+  /** Your characters, by name (#21). */
+  characters: Character[];
 }
 
 interface StoreValue extends Snapshot {
@@ -57,6 +59,7 @@ function readSnapshot(repo: Repo): Snapshot {
     priceSnapshots: repo.listSnapshots(),
     transactions: repo.listTransactions(),
     onboarding: repo.getOnboarding(),
+    characters: repo.listCharacters(),
   };
 }
 

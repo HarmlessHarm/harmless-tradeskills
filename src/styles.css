@@ -1901,3 +1901,10 @@ a.button.primary {
   width: 100%;
   padding: 0;
 }
+tr.dim td {
+  opacity: 0.65;
+}
+.step-who {
+  display: block;
+  margin-top: 2px;
+}
