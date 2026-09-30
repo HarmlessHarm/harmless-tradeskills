@@ -469,7 +469,7 @@ function BuySection({
                     onClick={() => onMove(x.itemId)}
                     title={`Buy from ${source === 'ah' ? 'a vendor' : 'the AH'} instead`}
                     aria-label={`Move to ${source === 'ah' ? 'vendor' : 'AH'}`}
-                    data-tour={`move-${x.itemId}`}
+                    data-tour={source === 'ah' ? `move-${x.itemId}` : undefined}
                   >
                     ⇄
                   </button>

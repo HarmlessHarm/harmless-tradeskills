@@ -44,8 +44,9 @@ const R_WAND = 'spell:14807';
 
 const hasRecipe = (wf: Workflow | undefined, id: string) => !!wf?.steps.some((s) => s.type === 'recipe' && s.recipeId === id);
 const hasDe = (wf: Workflow | undefined, id: number) => !!wf?.steps.some((s) => s.type === 'disenchant' && s.itemId === id);
-const woodFromVendor = ({ store, wf }: TourCtx) =>
-  !!wf && buySourceFor(store.engine, wf, WOOD) === 'vendor' && store.itemRecords.find((r) => r.id === WOOD)?.vendorBuy != null;
+const woodPrice = ({ store }: TourCtx) => store.itemRecords.find((r) => r.id === WOOD)?.vendorBuy != null;
+const woodInVendorList = ({ store, wf }: TourCtx) => !!wf && buySourceFor(store.engine, wf, WOOD) === 'vendor';
+const woodFromVendor = (c: TourCtx) => woodInVendorList(c) && woodPrice(c);
 const Check = ({ ok }: { ok: boolean }) => <span className={ok ? 'pos' : 'muted'}>{ok ? '✓' : '○'}</span>;
 
 const RESTART = <p className="muted">You can restart both tours any time from Settings &gt; Tutorials.</p>;
@@ -191,18 +192,19 @@ export const TOURS: Record<TourId, TourStep[]> = {
     },
     {
       page: 'workflows',
-      target: (c) => (woodFromVendor(c) || !c.el(`move-${WOOD}`) ? `vendor-${WOOD}` : `move-${WOOD}`),
+      target: (c) => (woodInVendorList(c) ? `vendor-${WOOD}` : `move-${WOOD}`),
       title: 'Simple Wood comes from a vendor',
       body: (c) =>
-        buySourceFor(c.store.engine, c.wf!, WOOD) === 'vendor' ? (
+        woodInVendorList(c) ? (
           <p>Now type the price the vendor asks for Simple Wood and press Enter.</p>
         ) : (
           <p>
             The starter data has no vendor price for Simple Wood, so it landed under Auction House. Press <b>⇄</b> to buy it from a vendor instead.
           </p>
         ),
-      // Already sorted when the starter data has a vendor price for it.
-      skip: ({ wf }) => !hasRecipe(wf, R_WAND),
+      // Nothing to show when Simple Wood already has a vendor price or is already bought from a vendor
+      // (a second run, or starter data that has its price).
+      skip: (c) => !hasRecipe(c.wf, R_WAND) || woodPrice(c) || woodInVendorList(c),
       done: woodFromVendor,
       next: 'Skip this',
     },

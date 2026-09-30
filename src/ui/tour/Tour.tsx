@@ -76,14 +76,24 @@ function TourRunner() {
 
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
-  const go = useCallback(
-    (to: number, patch: Partial<NonNullable<Onboarding['active']>> = {}) => {
-      const { store: s } = ctxRef.current;
-      const a = s.onboarding.active!;
-      s.mutate((repo) => repo.saveOnboarding({ ...s.onboarding, active: { ...a, ...patch, step: to } }));
-    },
-    [],
-  );
+  /** Step reached with Back: it waits for Next, even when what it asks is already done. */
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const reviewingRef = useRef<string | null>(null);
+  /**
+   * Moves to a step. Steps whose `skip` holds are passed over right here, in the direction of travel
+   * (`dir`), so `skip` is only ever checked on arrival: doing part of a step never skips the rest.
+   */
+  const go = useCallback((to: number, patch: Partial<NonNullable<Onboarding['active']>> = {}, dir: 1 | -1 | 0 = 1) => {
+    const c = ctxRef.current;
+    const a = c.store.onboarding.active!;
+    const list = TOURS[a.tour];
+    let step = to;
+    while (dir !== 0 && step > 0 && step < list.length && list[step].skip?.(c)) step += dir;
+    const key = dir < 0 ? `${a.tour}-${step}` : null;
+    reviewingRef.current = key;
+    setReviewing(key);
+    c.store.mutate((repo) => repo.saveOnboarding({ ...c.store.onboarding, active: { ...a, ...patch, step } }));
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -94,10 +104,10 @@ function TourRunner() {
       // Workflow tour: remember the workflow made after the tour started; start over if it is deleted.
       if (a.tour === 'workflow') {
         const made = c.store.workflows.filter((w) => w.id > a.afterId).sort((x, y) => y.id - x.id)[0];
-        if (a.workflowId === null && made) return go(a.step, { workflowId: made.id });
-        if (a.workflowId !== null && !c.wf) return go(0, { workflowId: null });
+        if (a.workflowId === null && made) return go(a.step, { workflowId: made.id }, 0);
+        if (a.workflowId !== null && !c.wf) return go(0, { workflowId: null }, 0);
       }
-      if (st.skip?.(c) || st.done?.(c)) go(a.step + 1);
+      if (st.done?.(c) && reviewingRef.current !== `${a.tour}-${a.step}`) go(a.step + 1);
       else tick((n) => n + 1);
     }, 300);
     return () => clearInterval(id);
@@ -113,8 +123,13 @@ function TourRunner() {
       ctx={ctx}
       index={active.step}
       count={steps.length}
+      reviewing={reviewing === `${active.tour}-${active.step}`}
       onNext={() => go(active.step + 1)}
-      onBack={active.step > 0 ? () => go(Math.max(0, active.step - 1)) : undefined}
+      onBack={
+        active.step > 0
+          ? () => go(Math.max(0, active.step - 1), {}, -1)
+          : undefined
+      }
       onClose={() => tour.end(false)}
     />
   );
@@ -150,11 +165,14 @@ function Bubble({
   ctx,
   index,
   count,
+  reviewing,
   onNext,
   onBack,
   onClose,
 }: {
   step: TourStep;
+  /** Reached with Back: show Next even on a step that moves on by itself. */
+  reviewing: boolean;
   target: string | null;
   ctx: TourCtx;
   index: number;
@@ -257,9 +275,9 @@ function Bubble({
           <span className="grow" />
           {step.actions ? (
             step.actions(ctx)
-          ) : step.next ? (
-            <button className={auto ? '' : 'primary'} onClick={onNext}>
-              {step.next}
+          ) : step.next || (auto && reviewing) ? (
+            <button className={auto && !reviewing ? '' : 'primary'} onClick={onNext}>
+              {reviewing ? 'Next' : step.next}
             </button>
           ) : auto ? (
             <span className="small muted">Do it to continue</span>
