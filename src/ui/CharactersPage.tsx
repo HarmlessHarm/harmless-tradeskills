@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { characterRecipes, type RecipeKnowledge, type RecipeStatus } from '../engine/characters';
-import type { Character, CharacterProfession, Faction } from '../engine/types';
+import type { Character, CharacterProfession, Faction, Ruleset } from '../engine/types';
 import { learnedFromText, professionOptions } from '../professions';
 import { useStore } from '../state/store';
 import { wowheadUrl } from '../wowhead/adapter';
@@ -10,7 +10,7 @@ import { SkillLevels } from './skill';
 const newCharacter = (name: string): Character => ({
   id: 0,
   name,
-  realm: '',
+  ruleset: null,
   faction: null,
   level: null,
   notes: '',
@@ -18,6 +18,8 @@ const newCharacter = (name: string): Character => ({
   learned: [],
   updatedAt: Date.now(),
 });
+
+const RULESET_LABELS: Record<Ruleset, string> = { pve: 'PvE', pvp: 'PvP', rp: 'RP' };
 
 const professionsText = (c: Character) => c.professions.map((p) => `${p.profession} ${p.skill}`).join(' · ');
 
@@ -42,7 +44,7 @@ export function CharactersPage() {
               <button className={`wf-item ${selected?.id === c.id ? 'on' : ''}`} onClick={() => setSelectedId(c.id)}>
                 <span className="wf-name">
                   {c.name}
-                  {c.realm && <span className="muted"> - {c.realm}</span>}
+                  {c.ruleset && <span className="muted"> ({RULESET_LABELS[c.ruleset]})</span>}
                 </span>
                 <span className="wf-sub muted">{professionsText(c) || 'no professions'}</span>
               </button>
@@ -101,10 +103,18 @@ function CharacterEditor({ char, onDeleted }: { char: Character; onDeleted: () =
         }
       >
         <div className="field-row">
-          <label>
-            Realm
-            <input value={char.realm} onChange={(e) => save({ realm: e.target.value })} />
-          </label>
+          <div className="seg-field" title="Each ruleset is one megaserver with its own linked auction houses">
+            <span>Ruleset</span>
+            <Segmented
+              label="Ruleset"
+              value={char.ruleset ?? ''}
+              options={[
+                { value: '', label: 'Unset' },
+                ...(Object.keys(RULESET_LABELS) as Ruleset[]).map((r) => ({ value: r, label: RULESET_LABELS[r] })),
+              ]}
+              onChange={(v) => save({ ruleset: (v || null) as Ruleset | null })}
+            />
+          </div>
           <div className="seg-field">
             <span>Faction</span>
             <Segmented

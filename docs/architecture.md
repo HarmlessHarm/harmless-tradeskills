@@ -10,7 +10,7 @@ React + Vite, deployed on Vercel. Storage is SQLite (sql.js, WASM) in the browse
 - **PriceObservation**: item, channel (AH), price, optional min AH price, timestamp. [ref: REQ-4]
 - **Workflow**: name, notes, ordered recipe references, buy map (item -> AH/vendor) for external inputs, sell map (item -> AH/vendor/keep) for terminal outputs. Recipes are referenced, not copied. [ref: DEC-9, REQ-6]
 - **Recipe learning** (on Recipe): learned from (trainer/vendor/drop/quest/other), required skill, skill-up levels (orange/yellow/green/grey, orange optional). [ref: DEC-29]
-- **Character** (personal): name, realm, faction, level, notes, professions with skill, and recipes learned by hand. A character knows trainer recipes its skill allows plus the ones marked learned. [ref: DEC-29]
+- **Character** (personal): name, ruleset (PvE/PvP/RP), faction, level, notes, professions with skill, and recipes learned by hand. A character knows trainer recipes its skill allows plus the ones marked learned. [ref: DEC-29]
 - **Config**: AH cut per AH type, deposit rate per duration, durations, per-action overhead, per-batch overhead, default batch size. [ref: REQ-5, NFR-5]
 
 ## Engine (conceptual)

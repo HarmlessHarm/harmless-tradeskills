@@ -430,7 +430,7 @@ describe('split databases', () => {
 describe('characters', () => {
   it('saves characters with professions and learned recipes, and deletes them whole', async () => {
     const repo = await freshRepo();
-    const base = { id: 0, name: 'Harm', realm: 'Forever', faction: 'horde' as const, level: 20, notes: '', professions: [{ profession: 'Alchemy', skill: 75 }], learned: [], updatedAt: 1 };
+    const base = { id: 0, name: 'Harm', ruleset: 'pvp' as const, faction: 'horde' as const, level: 20, notes: '', professions: [{ profession: 'Alchemy', skill: 75 }], learned: [], updatedAt: 1 };
     const id = repo.saveCharacter(base);
     const other = repo.saveCharacter({ ...base, name: 'Alt' });
     repo.setLearned(id, 'spell:6624', true);
@@ -443,7 +443,7 @@ describe('characters', () => {
       ['Harm', ['spell:6624']],
     ]);
     repo.saveCharacter({ ...base, id, professions: [{ profession: 'Alchemy', skill: 90 }], updatedAt: 2 });
-    expect(repo.listCharacters().find((c) => c.id === id)).toMatchObject({ professions: [{ profession: 'Alchemy', skill: 90 }], faction: 'horde', level: 20 });
+    expect(repo.listCharacters().find((c) => c.id === id)).toMatchObject({ professions: [{ profession: 'Alchemy', skill: 90 }], ruleset: 'pvp', faction: 'horde', level: 20 });
     repo.deleteCharacter(id);
     expect(repo.listCharacters().map((c) => c.name)).toEqual(['Alt']);
     repo.saveCharacter({ ...base, name: 'New' });

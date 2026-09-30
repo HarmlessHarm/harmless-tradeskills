@@ -626,10 +626,10 @@ export class Repo {
       const id = Number(r.character_id);
       learned.set(id, [...(learned.get(id) ?? []), String(r.recipe_id)]);
     }
-    return this.all('user', 'SELECT * FROM characters ORDER BY name, realm').map((r) => ({
+    return this.all('user', 'SELECT * FROM characters ORDER BY name').map((r) => ({
       id: Number(r.id),
       name: String(r.name),
-      realm: String(r.realm ?? ''),
+      ruleset: (r.ruleset as Character['ruleset']) ?? null,
       faction: (r.faction as Character['faction']) ?? null,
       level: num(r.level),
       notes: String(r.notes ?? ''),
@@ -641,12 +641,12 @@ export class Repo {
 
   /** Insert when id is 0, otherwise update. Returns the id. Learned recipes are set with setLearned. */
   saveCharacter(c: Character): number {
-    const params: SqlValue[] = [c.name, c.realm, c.faction, c.level, c.notes, JSON.stringify(c.professions), c.updatedAt];
+    const params: SqlValue[] = [c.name, c.ruleset, c.faction, c.level, c.notes, JSON.stringify(c.professions), c.updatedAt];
     if (c.id) {
-      this.run('user', 'UPDATE characters SET name=?, realm=?, faction=?, level=?, notes=?, professions=?, updated_at=? WHERE id=?', [...params, c.id]);
+      this.run('user', 'UPDATE characters SET name=?, ruleset=?, faction=?, level=?, notes=?, professions=?, updated_at=? WHERE id=?', [...params, c.id]);
       return c.id;
     }
-    this.run('user', 'INSERT INTO characters (name, realm, faction, level, notes, professions, updated_at) VALUES (?,?,?,?,?,?,?)', params);
+    this.run('user', 'INSERT INTO characters (name, ruleset, faction, level, notes, professions, updated_at) VALUES (?,?,?,?,?,?,?)', params);
     return this.lastId('user');
   }
 

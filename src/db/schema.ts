@@ -116,7 +116,7 @@ export const USER_MIGRATIONS: string[] = [
   `CREATE TABLE characters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    realm TEXT NOT NULL DEFAULT '',
+    ruleset TEXT,
     faction TEXT,
     level INTEGER,
     notes TEXT NOT NULL DEFAULT '',

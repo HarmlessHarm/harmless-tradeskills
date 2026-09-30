@@ -6,7 +6,7 @@ import type { Character, Recipe } from './types';
 const char = (professions: [string, number][], learned: string[] = [], name = 'Harm'): Character => ({
   id: 1,
   name,
-  realm: '',
+  ruleset: null,
   faction: null,
   level: null,
   notes: '',

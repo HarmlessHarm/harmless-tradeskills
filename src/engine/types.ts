@@ -227,6 +227,9 @@ export interface FlipFavorite {
 
 export type Faction = 'alliance' | 'horde';
 
+/** Forever has no realms: each ruleset is a megaserver, with its own linked auction houses. */
+export type Ruleset = 'pve' | 'pvp' | 'rp';
+
 export interface CharacterProfession {
   profession: string;
   skill: number;
@@ -236,7 +239,7 @@ export interface CharacterProfession {
 export interface Character {
   id: number;
   name: string;
-  realm: string;
+  ruleset: Ruleset | null;
   faction: Faction | null;
   level: number | null;
   notes: string;
