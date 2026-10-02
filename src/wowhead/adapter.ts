@@ -417,6 +417,9 @@ export interface ParsedSpell {
   warnings: string[];
 }
 
+/** Enchant spells are named "Enchant <slot> - <effect>": the first word is exactly "Enchant". */
+export const isEnchantName = (name: string) => name.startsWith('Enchant ');
+
 export function parseSpellTooltip(data: TooltipResponse): ParsedSpell {
   const html = data.tooltip;
   const warnings: string[] = [];
@@ -431,14 +434,16 @@ export function parseSpellTooltip(data: TooltipResponse): ParsedSpell {
 
   // The created item is the first item link after the reagents. Its quantity defaults to 1: Wowhead
   // shows "(2)" after some created items (white and green alike) and its meaning is unknown.
+  // Enchants ("Enchant Bracer - Minor Health") enchant an item and create none.
+  const enchant = isEnchantName(data.name);
   const searchFrom = reagentMatch ? reagentMatch.index + reagentMatch[0].length : Math.max(0, headerEnd);
-  const createdMatch = new RegExp(ITEM_LINK.source, 'i').exec(html.slice(searchFrom));
+  const createdMatch = enchant ? null : new RegExp(ITEM_LINK.source, 'i').exec(html.slice(searchFrom));
   const created = createdMatch ? Number(createdMatch[1]) : null;
-  if (created === null) warnings.push('No created item found. Add the output by hand.');
+  if (created === null && !enchant) warnings.push('No created item found. Add the output by hand.');
 
   const fields: RecipeFields = {
     name: data.name,
-    kind: 'craft',
+    kind: enchant ? 'enchant' : 'craft',
     profession: null,
     castTimeMs: parseCastTimeMs(tooltipText(header)),
     inputs,

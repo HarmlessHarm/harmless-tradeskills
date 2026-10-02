@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { extractProfessions, extractRecipeRows, extractVendorPrices, parseRecipeSources, withoutProfessionSpells, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
+import { extractProfessions, extractRecipeRows, extractVendorPrices, isEnchantName, parseRecipeSources, withoutProfessionSpells, extractWowheadRefs, fetchTooltip, parseItemTooltip, parseSpellTooltip, parseWowheadRef, tooltipText, type TooltipResponse } from './adapter';
 
 /** Real Forever tooltip responses, saved byte for byte. See fixtures/. */
 const fixture = (name: string): TooltipResponse =>
@@ -193,6 +193,28 @@ describe('spell tooltips (real responses)', () => {
     expect(r.fields.inputs).toEqual([]);
     expect(r.fields.outputs).toEqual([]);
     expect(r.warnings).toHaveLength(2);
+  });
+
+  it('Enchants: kind enchant, no created item and no warning for it', () => {
+    const r = parseSpellTooltip({
+      name: 'Enchant Bracer - Minor Health',
+      tooltip:
+        '<table><tr><td><b>Enchant Bracer - Minor Health</b><br>5 sec cast</td></tr></table>' +
+        '<table><tr><td>Reagents: <br><div class="indent q1"><a href="/forever/item=10940/strange-dust">Strange Dust</a></div>' +
+        'Permanently enchant bracers to increase health by 5. <a href="/forever/item=6218/runed-copper-rod">Runed Copper Rod</a></td></tr></table>',
+    });
+    expect(r.fields.kind).toBe('enchant');
+    expect(r.fields.inputs).toEqual([{ itemId: 10940, qty: 1 }]);
+    expect(r.fields.outputs).toEqual([]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it('only names whose first word is "Enchant" are enchants', () => {
+    expect(isEnchantName('Enchant Bracer - Minor Health')).toBe(true);
+    expect(isEnchantName('Enchanted Thorium')).toBe(false);
+    expect(isEnchantName('Enchanted Leather')).toBe(false);
+    expect(isEnchantName('Runed Copper Rod')).toBe(false);
+    expect(recipe('spell-3840').fields.kind).toBe('craft');
   });
 });
 
