@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { exportFile, openBrowserDbs, openDbsFromBytes, openFreshDbs, openPricesFile, persist, persister } from '../db/browser';
 import { type DbKind, type Dbs, type Onboarding, Repo } from '../db/repo';
 import { effectiveItem, effectiveRecipe } from '../engine/items';
-import type { Character, Config, Copper, DisenchantRule, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
+import type { Character, Config, Copper, DisenchantRule, FavorCrate, FlipFavorite, ItemRecord, RecipeRecord, Workflow } from '../engine/types';
 import type { Transaction } from '../engine/ledger';
 import { ahKey } from '../engine/prices';
 import { currentAhPrices, type PriceSnapshot } from '../engine/snapshots';
@@ -13,6 +13,8 @@ export interface Snapshot {
   itemRecords: ItemRecord[];
   recipeRecords: RecipeRecord[];
   deRules: DisenchantRule[];
+  /** Waylaid Crates for Merchant Favor. */
+  favorCrates: FavorCrate[];
   /** Min AH prices you set per item (REQ-4.2). */
   ahMins: Map<number, Copper>;
   workflows: Workflow[];
@@ -52,6 +54,7 @@ function readSnapshot(repo: Repo): Snapshot {
     itemRecords: repo.listItems(),
     recipeRecords: repo.listRecipes(),
     deRules: repo.listDeRules(),
+    favorCrates: repo.listFavorCrates(),
     ahMins: repo.listAhMins(),
     workflows: repo.listWorkflows(),
     config: repo.getConfig(),

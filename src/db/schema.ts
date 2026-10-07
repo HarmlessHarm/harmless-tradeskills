@@ -5,12 +5,13 @@
  *
  * Data is split over three database files so game data and prices can be shared without personal
  * data (DEC-21, DEC-23):
- * - data: items, recipes and disenchant rules. Shareable with other players.
+ * - data: items, recipes, disenchant rules and Waylaid Crates. Shareable with other players.
  * - user: workflows, flip favorites, the flip ledger, min AH prices, characters and settings.
  * - prices: AH price snapshots. Shareable with other players on the same realm.
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
 import { deSeedMigration } from './deSeed';
+import { favorSeedMigration } from './favorSeed';
 
 export type DbKind = 'data' | 'user' | 'prices';
 
@@ -50,6 +51,8 @@ export const DATA_MIGRATIONS: string[] = [
   );
   `,
   deSeedMigration(),
+  // Waylaid Crates for the Merchant Favor calculator.
+  favorSeedMigration(),
 ];
 
 export const USER_MIGRATIONS: string[] = [

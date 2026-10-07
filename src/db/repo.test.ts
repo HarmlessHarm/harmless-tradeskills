@@ -27,6 +27,27 @@ describe('repo', () => {
     ]);
   });
 
+  it('seeds the Waylaid Crates and saves edits', async () => {
+    const repo = await freshRepo();
+    const crates = repo.listFavorCrates();
+    expect(crates).toHaveLength(12);
+    expect(crates.map((c) => c.favor)).toEqual([10, 10, 10, 20, 20, 20, null, null, null, null, null, null]);
+    const parts = crates.find((c) => c.name === 'Waylaid Crate: Journeyman Parts')!;
+    expect(parts.bundles).toEqual([
+      { itemId: 4371, qty: 8 },
+      { itemId: 4375, qty: 7 },
+      { itemId: 4382, qty: 4 },
+      { itemId: 10558, qty: 45 },
+    ]);
+    repo.saveFavorCrate({ ...parts, itemId: 123, favor: 25 });
+    const id = repo.saveFavorCrate({ id: 0, name: 'New', itemId: null, favor: null, bundles: [], notes: '' });
+    repo.deleteFavorCrate(crates[0].id);
+    const after = repo.listFavorCrates();
+    expect(after).toHaveLength(12);
+    expect(after.find((c) => c.id === parts.id)).toMatchObject({ itemId: 123, favor: 25 });
+    expect(after.at(-1)?.id).toBe(id);
+  });
+
   it('seeding the DE table keeps rules the user edited', async () => {
     const SQL = await initSqlJs();
     const db = new SQL.Database();
@@ -378,7 +399,7 @@ describe('split databases', () => {
   it('keeps game data, personal data and prices in separate files', async () => {
     const repo = await freshRepo();
     const tables = (db: typeof repo.data) => db.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)[0].values.flat();
-    expect(tables(repo.data)).toEqual(['de_rules', 'items', 'recipes']);
+    expect(tables(repo.data)).toEqual(['de_rules', 'favor_crates', 'items', 'recipes']);
     expect(tables(repo.user)).toEqual(['ah_min_prices', 'character_recipes', 'characters', 'flip_transactions', 'settings', 'workflows']);
     expect(tables(repo.prices)).toEqual(['price_snapshots']);
     expect(dbKind(repo.data)).toBe('data');

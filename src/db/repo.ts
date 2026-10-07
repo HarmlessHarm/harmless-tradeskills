@@ -5,6 +5,7 @@ import type {
   Config,
   Copper,
   DisenchantRule,
+  FavorCrate,
   FlipFavorite,
   ItemRecord,
   RecipeRecord,
@@ -346,6 +347,34 @@ export class Repo {
 
   deleteDeRule(id: number): void {
     this.run('data', 'DELETE FROM de_rules WHERE id = ?', [id]);
+  }
+
+  // Waylaid Crates ----------------------------------------------------------
+
+  listFavorCrates(): FavorCrate[] {
+    return this.all('data', 'SELECT * FROM favor_crates ORDER BY id').map((r) => ({
+      id: Number(r.id),
+      name: String(r.name),
+      itemId: num(r.item_id),
+      favor: num(r.favor),
+      bundles: json(r.bundles, []),
+      notes: String(r.notes ?? ''),
+    }));
+  }
+
+  /** Insert when id is 0, otherwise update. Returns the id. */
+  saveFavorCrate(crate: FavorCrate): number {
+    const params: SqlValue[] = [crate.name, crate.itemId, crate.favor, JSON.stringify(crate.bundles), crate.notes];
+    if (crate.id) {
+      this.run('data', 'UPDATE favor_crates SET name=?, item_id=?, favor=?, bundles=?, notes=? WHERE id=?', [...params, crate.id]);
+      return crate.id;
+    }
+    this.run('data', 'INSERT INTO favor_crates (name, item_id, favor, bundles, notes) VALUES (?,?,?,?,?)', params);
+    return this.lastId('data');
+  }
+
+  deleteFavorCrate(id: number): void {
+    this.run('data', 'DELETE FROM favor_crates WHERE id = ?', [id]);
   }
 
   // Prices ------------------------------------------------------------------

@@ -230,6 +230,22 @@ export interface FlipFavorite {
   qty?: number;
 }
 
+/**
+ * A Waylaid Crate: filled with any one of its bundles, it gives Merchant Favor, the currency recipes
+ * are bought with. Game data.
+ */
+export interface FavorCrate {
+  id: number;
+  name: string;
+  /** The crate as an item, for its AH price. null until it is set. */
+  itemId: number | null;
+  /** Merchant Favor it gives. null while unknown. */
+  favor: number | null;
+  /** Each bundle is one item and the quantity that fills the crate. */
+  bundles: Qty[];
+  notes: string;
+}
+
 export type Faction = 'alliance' | 'horde';
 
 /** Forever has no realms: each ruleset is a megaserver, with its own linked auction houses. */
