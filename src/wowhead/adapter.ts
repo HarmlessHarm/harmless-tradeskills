@@ -458,5 +458,27 @@ export function parseSpellTooltip(data: TooltipResponse): ParsedSpell {
   return { fields, referencedItems, warnings };
 }
 
+export interface CrateLine {
+  qty: number;
+  name: string;
+}
+
+/**
+ * The bundles on a Waylaid Crate's tooltip: "Use: Fill the crate with any bundle from the following
+ * list:" followed by one "- 8 Bronze Tube" line per bundle. Items are named, not linked.
+ */
+export function parseCrateBundles(html: string): CrateLine[] {
+  const lines = tooltipText(html).split('\n');
+  const start = lines.findIndex((l) => /following list:?\s*$/i.test(l));
+  if (start < 0) return [];
+  const out: CrateLine[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const m = /^[-–•]\s*(\d+)\s*x?\s+(.+)$/.exec(line);
+    if (!m) break;
+    out.push({ qty: Number(m[1]), name: m[2].trim() });
+  }
+  return out;
+}
+
 export const wowheadUrl = (type: WowheadType, id: number) => `https://www.wowhead.com/forever/${type}=${id}`;
 export const iconUrl = (icon: string) => `https://wow.zamimg.com/images/wow/icons/small/${icon}.jpg`;

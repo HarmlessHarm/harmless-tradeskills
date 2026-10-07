@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crateCost } from './favor';
+import { crateCost, crateTier, matchBundles, tierFavor } from './favor';
 import { ahKey, type PriceContext } from './prices';
 import type { AhPrice, FavorCrate, Item } from './types';
 
@@ -70,5 +70,23 @@ describe('crateCost', () => {
     const c = crateCost(ctx, { ...crate, favor: null }, 'faction', true);
     expect(c.total).toBe(4200);
     expect(c.perFavor).toBeNull();
+  });
+});
+
+describe('crate names', () => {
+  it('reads the tier and its favor', () => {
+    expect(crateTier('Waylaid Crate: Apprentice Herbs')).toBe(0);
+    expect(crateTier('Waylaid Crate: Flowering Artisan Herbs')).toBe(3);
+    expect(crateTier('Something else')).toBe(4);
+    expect(tierFavor('Waylaid Crate: Journeyman Ore')).toBe(20);
+    expect(tierFavor('Waylaid Crate: Earthly Expert Herbs')).toBeNull();
+  });
+
+  it('matches bundle names to items ignoring case', () => {
+    const items = [item(4371, null), item(4382, null)].map((i) => ({ ...i, name: i.id === 4371 ? 'Bronze Tube' : 'Bronze Framework' }));
+    expect(matchBundles([{ qty: 8, name: 'bronze tube' }, { qty: 2, name: 'Nope' }], items)).toEqual({
+      bundles: [{ itemId: 4371, qty: 8 }],
+      unmatched: [{ qty: 2, name: 'Nope' }],
+    });
   });
 });

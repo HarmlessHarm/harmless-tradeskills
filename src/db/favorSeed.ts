@@ -46,3 +46,27 @@ export function favorSeedMigration(): string {
     ${rows.join(',\n    ')};
   `;
 }
+
+/** Every Waylaid Crate on Wowhead Forever, as of migration 4. Frozen with that migration. */
+const ALL_CRATES = [
+  ...['Curiosities', 'Fabrics', 'Herbs', 'Ingots', 'Ore', 'Parts', 'Textiles'].flatMap((kind) =>
+    ['Apprentice', 'Journeyman', 'Expert', 'Artisan'].filter((t) => !((t === 'Expert' || t === 'Artisan') && kind === 'Herbs')).map((t) => `${t} ${kind}`),
+  ),
+  'Earthly Expert Herbs',
+  'Flowering Expert Herbs',
+  'Earthly Artisan Herbs',
+  'Flowering Artisan Herbs',
+];
+
+const MIGRATION_4_FAVOR: Record<string, number> = { Apprentice: 10, Journeyman: 20 };
+
+/** Data migration 4: add the crates migration 3 did not have, leaving existing ones alone. */
+export function favorAllCratesMigration(): string {
+  return ALL_CRATES.map((short) => {
+    const name = sqlText(`Waylaid Crate: ${short}`);
+    const tier = Object.keys(MIGRATION_4_FAVOR).find((t) => short.includes(t));
+    const favor = tier ? String(MIGRATION_4_FAVOR[tier]) : 'NULL';
+    return `INSERT INTO favor_crates (name, item_id, favor, bundles, notes)
+    SELECT ${name}, NULL, ${favor}, '[]', '' WHERE NOT EXISTS (SELECT 1 FROM favor_crates WHERE name = ${name});`;
+  }).join('\n');
+}

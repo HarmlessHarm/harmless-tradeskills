@@ -11,7 +11,7 @@
  * Each file has its own migrations and user_version, and is tagged with an application_id.
  */
 import { deSeedMigration } from './deSeed';
-import { favorSeedMigration } from './favorSeed';
+import { favorAllCratesMigration, favorSeedMigration } from './favorSeed';
 
 export type DbKind = 'data' | 'user' | 'prices';
 
@@ -53,6 +53,8 @@ export const DATA_MIGRATIONS: string[] = [
   deSeedMigration(),
   // Waylaid Crates for the Merchant Favor calculator.
   favorSeedMigration(),
+  // The rest of the Waylaid Crates: Curiosities, Herbs, Ore and Textiles.
+  favorAllCratesMigration(),
 ];
 
 export const USER_MIGRATIONS: string[] = [

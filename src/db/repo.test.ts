@@ -30,8 +30,10 @@ describe('repo', () => {
   it('seeds the Waylaid Crates and saves edits', async () => {
     const repo = await freshRepo();
     const crates = repo.listFavorCrates();
-    expect(crates).toHaveLength(12);
-    expect(crates.map((c) => c.favor)).toEqual([10, 10, 10, 20, 20, 20, null, null, null, null, null, null]);
+    expect(crates).toHaveLength(30);
+    expect(new Set(crates.map((c) => c.name)).size).toBe(30);
+    expect(crates.filter((c) => c.favor === 10)).toHaveLength(7);
+    expect(crates.filter((c) => c.favor === 20)).toHaveLength(7);
     const parts = crates.find((c) => c.name === 'Waylaid Crate: Journeyman Parts')!;
     expect(parts.bundles).toEqual([
       { itemId: 4371, qty: 8 },
@@ -43,7 +45,7 @@ describe('repo', () => {
     const id = repo.saveFavorCrate({ id: 0, name: 'New', itemId: null, favor: null, bundles: [], notes: '' });
     repo.deleteFavorCrate(crates[0].id);
     const after = repo.listFavorCrates();
-    expect(after).toHaveLength(12);
+    expect(after).toHaveLength(30);
     expect(after.find((c) => c.id === parts.id)).toMatchObject({ itemId: 123, favor: 25 });
     expect(after.at(-1)?.id).toBe(id);
   });
